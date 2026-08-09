@@ -158,14 +158,22 @@ function installHook() {
   let content = fs.readFileSync(KIMI_CONFIG, "utf-8");
   const cmd = hookCommand();
   const hookBlock = IS_WIN
-    ? `[[hooks]]\nevent = "SessionEnd"\ncommand = "${cmd}"\n`
+    ? `[[hooks]]\nevent = "SessionEnd"\ncommand = '${cmd}'\n`
     : `[[hooks]]\nevent = "SessionEnd"\ncommand = "${cmd}"\n`;
 
   if (content.includes(cmd)) {
     log("El hook SessionEnd ya está configurado.");
     return;
   }
-  content = content.trimEnd() + "\n\n" + hookBlock;
+
+  // Kimi por defecto pone `hooks = []`, que es incompatible con [[hooks]].
+  // Reemplazamos ese array vacío por el array of tables.
+  if (/^\s*hooks\s*=\s*\[\]\s*$/m.test(content)) {
+    content = content.replace(/^\s*hooks\s*=\s*\[\]\s*$/m, hookBlock.trim());
+  } else {
+    content = content.trimEnd() + "\n\n" + hookBlock;
+  }
+
   fs.writeFileSync(KIMI_CONFIG, content, "utf-8");
   ok("Hook SessionEnd agregado a config.toml");
 }
