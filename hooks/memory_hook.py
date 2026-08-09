@@ -206,6 +206,15 @@ def handle_session_end(payload: dict[str, Any]) -> None:
     )
     print(f"[kimi-memory-hook] SessionEnd guardado: {result}", file=sys.stderr)
 
+    # Al finalizar la sesión, sincronizar con Git si está configurado.
+    try:
+        repo = memory_mcp.get_git_repo()
+        if repo:
+            sync_result = memory_mcp.sync_git(repo, full=True)
+            print(f"[kimi-memory-hook] Sync Git: {sync_result}", file=sys.stderr)
+    except Exception as e:
+        print(f"[kimi-memory-hook] Sync Git falló: {e}", file=sys.stderr)
+
 
 def handle_post_tool_use(payload: dict[str, Any]) -> None:
     tool_name = payload.get("tool_name", "")
