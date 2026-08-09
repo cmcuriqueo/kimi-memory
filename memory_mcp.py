@@ -123,7 +123,10 @@ def normalize_category(category: Any) -> str | None:
     if not category:
         return None
     cat = str(category).lower().strip()
-    return cat if cat in CATEGORIES else "note"
+    if not cat:
+        return None
+    # Se permiten categorías personalizadas; las predefinidas son sugerencias.
+    return cat
 
 
 _PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
@@ -241,7 +244,7 @@ def search_memories(
 
     sql = """
         SELECT m.id, m.content, m.category, m.project, m.created_at,
-               rank AS score
+               m.updated_at, rank AS score
         FROM memories_fts f
         JOIN memories m ON m.id = f.rowid
         WHERE memories_fts MATCH ?
@@ -395,8 +398,7 @@ TOOLS = [
                 },
                 "category": {
                     "type": "string",
-                    "enum": sorted(CATEGORIES),
-                    "description": "Tipo de recuerdo (decisión, bugfix, arquitectura, etc.)",
+                    "description": "Tipo de recuerdo. Puede ser una de las sugeridas (decision, bugfix, architecture, todo, snippet, note, context) o cualquier categoría personalizada.",
                 },
                 "project": {
                     "type": "string",

@@ -57,6 +57,8 @@ Para no quemar tokens, seguí este orden:
 
 ## Categorías
 
+Podés usar cualquier categoría que tenga sentido para tu flujo. Estas son las sugeridas:
+
 | Categoría | Uso |
 |---|---|
 | `decision` | Decisiones de diseño, arquitectura o estrategia. |
@@ -65,7 +67,9 @@ Para no quemar tokens, seguí este orden:
 | `todo` | Tareas pendientes o siguientes pasos importantes. |
 | `snippet` | Fragmentos de código o configuraciones reutilizables. |
 | `context` | Contexto general del proyecto o del usuario. |
-| `note` | Cualquier otra observación útil (por defecto). |
+| `note` | Cualquier otra observación útil. |
+
+También podés crear categorías propias, por ejemplo: `security`, `refactor`, `deployment`, `meeting`, etc.
 
 ## Ubicación de los datos
 
