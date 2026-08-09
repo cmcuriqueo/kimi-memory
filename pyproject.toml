@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kimi-memory"
+version = "0.1.0"
+description = "Memoria persistente minimalista para Kimi Code CLI (SQLite + FTS5)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Matías" },
+]
+keywords = ["kimi", "memory", "mcp", "sqlite", "context"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.scripts]
+kimi-memory = "cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cmcuriqueo/kimi-memory"
+Repository = "https://github.com/cmcuriqueo/kimi-memory"
+Issues = "https://github.com/cmcuriqueo/kimi-memory/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

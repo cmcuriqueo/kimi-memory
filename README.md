@@ -46,13 +46,17 @@ Los instaladores:
 
 > ⚠️ Reiniciá Kimi Code CLI después de instalar.
 
-## 🧪 Probar
+## 🧪 Tests
 
 ```bash
-python test_mcp.py
+# Instalar dependencias de desarrollo
+pip install -e ".[dev]"
+
+# Correr tests
+pytest
 ```
 
-O manualmente:
+También podés probar el servidor MCP manualmente:
 
 ```bash
 python -u memory_mcp.py

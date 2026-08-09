@@ -19,6 +19,9 @@ Todos los cambios notables se documentan en este archivo.
 - Filtros por fecha en `memory_search`: soporta `since`/`after` y `before` en formato ISO 8601 o relativo (`7d`, `1h`, `30m`, `2w`, `3mo`, `1y`).
 - `memory_export` e `memory_import`: backup y restauración de la memoria a/desde JSON.
 - Categorías personalizables: el usuario puede usar cualquier categoría, no solo las 7 predefinidas.
+- Tests unitarios con pytest (`tests/`) y workflow de CI/CD con GitHub Actions.
+- `pyproject.toml` con dependencias de desarrollo.
+- Refactorización de `memory_mcp.py` para soportar base de datos aislada en tests (`reset_db`).
 - Hook unificado `memory_hook.py` para múltiples eventos:
   - `SessionEnd`: guarda resumen de sesión como `session_summary`.
   - `PostToolUse`: guarda archivos modificados como `file_change`.

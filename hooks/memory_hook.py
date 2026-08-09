@@ -39,7 +39,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-PLUGIN_DIR = Path.home() / ".kimi-code" / "plugins" / "kimi-memory"
+PLUGIN_DIR = Path(
+    os.environ.get("KIMI_MEMORY_PLUGIN_DIR", Path.home() / ".kimi-code" / "plugins" / "kimi-memory")
+)
 SESSIONS_ROOT = Path.home() / ".kimi" / "sessions"
 
 sys.path.insert(0, str(PLUGIN_DIR))

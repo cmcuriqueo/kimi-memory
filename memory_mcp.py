@@ -28,8 +28,46 @@ except Exception:
 # Configuración
 # ---------------------------------------------------------------------------
 DEFAULT_DB = Path.home() / ".kimi-code" / "memory.db"
-DB_PATH = Path(os.environ.get("KIMI_MEMORY_DB", DEFAULT_DB))
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Variables globales para la conexión lazy. Permiten reconfigurar la DB en tests.
+_DB_PATH: Path | None = None
+_DB: sqlite3.Connection | None = None
+
+
+def get_db_path() -> Path:
+    if _DB_PATH is not None:
+        return _DB_PATH
+    return Path(os.environ.get("KIMI_MEMORY_DB", DEFAULT_DB))
+
+
+def set_db_path(path: Path | str) -> None:
+    global _DB_PATH
+    _DB_PATH = Path(path)
+
+
+def get_db() -> sqlite3.Connection:
+    global _DB
+    if _DB is None:
+        path = get_db_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _DB = init_db(path)
+    return _DB
+
+
+def reset_db(path: Path | str) -> sqlite3.Connection:
+    """Cierra la conexión actual y abre una nueva en el path indicado.
+
+    Útil para tests que necesitan una base de datos aislada.
+    """
+    global _DB
+    if _DB is not None:
+        try:
+            _get_db().close()
+        except Exception:
+            pass
+        _DB = None
+    set_db_path(path)
+    return get_db()
 
 CATEGORIES = {
     "decision",
@@ -50,8 +88,8 @@ def log(msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Base de datos
 # ---------------------------------------------------------------------------
-def init_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+def init_db(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA journal_mode=WAL")
@@ -140,9 +178,6 @@ def init_db() -> sqlite3.Connection:
     return conn
 
 
-DB = init_db()
-
-
 def normalize_category(category: Any) -> str | None:
     if not category:
         return None
@@ -194,16 +229,16 @@ def normalize_related_ids(related_ids: Any, memory_id: int | None = None) -> lis
 
 
 def set_memory_tags(memory_id: int, tags: list[str]) -> None:
-    DB.execute("DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,))
+    get_db().execute("DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,))
     for tag in tags:
-        DB.execute(
+        get_db().execute(
             "INSERT OR IGNORE INTO memory_tags (memory_id, tag) VALUES (?, ?)",
             (memory_id, tag),
         )
 
 
 def get_memory_tags(memory_id: int) -> list[str]:
-    rows = DB.execute(
+    rows = get_db().execute(
         "SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag",
         (memory_id,),
     ).fetchall()
@@ -211,21 +246,21 @@ def get_memory_tags(memory_id: int) -> list[str]:
 
 
 def set_memory_relations(memory_id: int, related_ids: list[int]) -> None:
-    DB.execute("DELETE FROM memory_relations WHERE memory_id = ? OR related_memory_id = ?", (memory_id, memory_id))
+    get_db().execute("DELETE FROM memory_relations WHERE memory_id = ? OR related_memory_id = ?", (memory_id, memory_id))
     for rid in related_ids:
         # Guardar relación en ambas direcciones para consultas simples.
-        DB.execute(
+        get_db().execute(
             "INSERT OR IGNORE INTO memory_relations (memory_id, related_memory_id) VALUES (?, ?)",
             (memory_id, rid),
         )
-        DB.execute(
+        get_db().execute(
             "INSERT OR IGNORE INTO memory_relations (memory_id, related_memory_id) VALUES (?, ?)",
             (rid, memory_id),
         )
 
 
 def get_memory_relations(memory_id: int) -> list[int]:
-    rows = DB.execute(
+    rows = get_db().execute(
         "SELECT related_memory_id FROM memory_relations WHERE memory_id = ? ORDER BY related_memory_id",
         (memory_id,),
     ).fetchall()
@@ -329,14 +364,14 @@ def add_memory(
     normalized_tags = normalize_tags(tags)
     normalized_related = normalize_related_ids(related_ids)
     now = int(time.time())
-    cur = DB.execute(
+    cur = get_db().execute(
         "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (cleaned, cat, proj, now, now),
     )
     memory_id = cur.lastrowid
     set_memory_tags(memory_id, normalized_tags)
     set_memory_relations(memory_id, normalized_related)
-    DB.commit()
+    get_db().commit()
     return {"id": memory_id, "added": True}
 
 
@@ -391,7 +426,7 @@ def search_memories(
         params.append(len(normalized_tags))
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
-    rows = DB.execute(sql, params).fetchall()
+    rows = get_db().execute(sql, params).fetchall()
     return [_result_with_snippet(row) for row in rows]
 
 
@@ -399,7 +434,7 @@ def get_memories(ids: list[int]) -> list[dict[str, Any]]:
     if not ids:
         return []
     placeholders = ",".join("?" * len(ids))
-    rows = DB.execute(
+    rows = get_db().execute(
         f"SELECT * FROM memories WHERE id IN ({placeholders}) ORDER BY id",
         [int(i) for i in ids],
     ).fetchall()
@@ -423,16 +458,16 @@ def recent_memories(limit: int = 10, tags: list[str] | None = None) -> list[dict
         """
         params = [*normalized_tags, len(normalized_tags), limit]
     else:
-        sql = "SELECT * FROM memories ORDER BY created_at DESC LIMIT ?"
+        sql = "SELECT * FROM memories ORDER BY created_at DESC, id DESC LIMIT ?"
         params = (limit,)
-    rows = DB.execute(sql, params).fetchall()
+    rows = get_db().execute(sql, params).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
 def timeline_memory(memory_id: int, window: int = 3) -> list[dict[str, Any]]:
     mid = int(memory_id)
     window = max(1, min(int(window), 50))
-    rows = DB.execute(
+    rows = get_db().execute(
         "SELECT * FROM memories WHERE id BETWEEN ? AND ? ORDER BY id",
         (mid - window, mid + window),
     ).fetchall()
@@ -448,7 +483,7 @@ def update_memory(
     related_ids: Any = None,
 ) -> dict[str, Any]:
     memory_id = int(memory_id)
-    row = DB.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+    row = get_db().execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
     if not row:
         return {"updated": False, "id": memory_id, "reason": "Recuerdo no encontrado."}
 
@@ -461,7 +496,7 @@ def update_memory(
     new_project = str(project).strip() if project is not None else row["project"]
     now = int(time.time())
 
-    DB.execute(
+    get_db().execute(
         "UPDATE memories SET content = ?, category = ?, project = ?, updated_at = ? WHERE id = ?",
         (cleaned, new_category, new_project, now, memory_id),
     )
@@ -470,13 +505,13 @@ def update_memory(
     normalized_related = normalize_related_ids(related_ids, memory_id=memory_id)
     set_memory_tags(memory_id, normalized_tags)
     set_memory_relations(memory_id, normalized_related)
-    DB.commit()
+    get_db().commit()
     return {"updated": True, "id": memory_id}
 
 
 def delete_memory(memory_id: int) -> dict[str, Any]:
-    cur = DB.execute("DELETE FROM memories WHERE id = ?", (int(memory_id),))
-    DB.commit()
+    cur = get_db().execute("DELETE FROM memories WHERE id = ?", (int(memory_id),))
+    get_db().commit()
     return {"deleted": cur.rowcount > 0, "id": int(memory_id)}
 
 
@@ -487,7 +522,7 @@ def export_memories(project: str | None = None, path: str | None = None) -> dict
         sql += " WHERE project = ?"
         params.append(project)
     sql += " ORDER BY created_at DESC"
-    rows = DB.execute(sql, params).fetchall()
+    rows = get_db().execute(sql, params).fetchall()
     data = [row_to_dict(row) for row in rows]
     result: dict[str, Any] = {"count": len(data), "memories": data}
     if path:
@@ -520,12 +555,13 @@ def import_memories(data: Any, mode: str = "merge") -> dict[str, Any]:
         raise ValueError("El JSON debe contener una lista de recuerdos")
 
     if str(mode).lower() == "replace":
-        DB.execute("DELETE FROM memories")
-        DB.execute("DELETE FROM memories_fts")
-        DB.commit()
+        get_db().execute("DELETE FROM memories")
+        get_db().execute("DELETE FROM memories_fts")
+        get_db().commit()
 
     now = int(time.time())
     imported = 0
+    id_map: dict[int, int] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -539,15 +575,45 @@ def import_memories(data: Any, mode: str = "merge") -> dict[str, Any]:
         proj = str(item.get("project")).strip() if item.get("project") else None
         created = int(item.get("created_at", now))
         updated = int(item.get("updated_at", created))
-        cur = DB.execute(
-            "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (cleaned, cat, proj, created, updated),
-        )
-        memory_id = cur.lastrowid
+        original_id = item.get("id")
+
+        if isinstance(original_id, int):
+            existing = get_db().execute("SELECT 1 FROM memories WHERE id = ?", (original_id,)).fetchone()
+            if existing:
+                original_id = None
+
+        if isinstance(original_id, int):
+            get_db().execute(
+                "INSERT INTO memories (id, content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (original_id, cleaned, cat, proj, created, updated),
+            )
+            memory_id = original_id
+        else:
+            cur = get_db().execute(
+                "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (cleaned, cat, proj, created, updated),
+            )
+            memory_id = cur.lastrowid
+
+        id_map[int(item.get("id", memory_id))] = memory_id
         set_memory_tags(memory_id, normalize_tags(item.get("tags")))
-        set_memory_relations(memory_id, normalize_related_ids(item.get("related_ids"), memory_id=memory_id))
         imported += 1
-    DB.commit()
+
+    # Segunda pasada: establecer relaciones usando el mapeo de IDs.
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        original_id = item.get("id")
+        if not isinstance(original_id, int):
+            continue
+        memory_id = id_map.get(original_id)
+        if memory_id is None:
+            continue
+        related = normalize_related_ids(item.get("related_ids"), memory_id=memory_id)
+        mapped_related = [id_map.get(rid, rid) for rid in related if rid in id_map]
+        set_memory_relations(memory_id, mapped_related)
+
+    get_db().commit()
     return {"imported": imported}
 
 
@@ -923,7 +989,7 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
 
 def main() -> None:
     try:
-        log(f"Iniciando. DB: {DB_PATH}")
+        log(f"Iniciando. DB: {get_db_path()}")
         for line in sys.stdin:
             line = line.strip()
             if not line:
