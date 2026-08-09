@@ -22,6 +22,7 @@ Backlog inspirado en la comparación con `claude-mem` y las necesidades propias 
 - [x] Hooks de ciclo de vida (`SessionEnd`, `PostToolUse`, `UserPromptSubmit`, `PreCompact`, `StopFailure`).
 - [x] Tags múltiples y relaciones entre recuerdos.
 - [x] Tests unitarios con pytest y CI/CD.
+- [x] Web Viewer con grafo y Markdown.
 
 ## 🧊 Heladera (ideas futuras)
 

@@ -113,7 +113,7 @@ export KIMI_MEMORY_DB=/ruta/a/tu/memory.db
 
 ## 🌐 Visor web
 
-Podés levantar una interfaz web local para ver, buscar, agregar, editar y eliminar recuerdos:
+Podés levantar una interfaz web local para ver, buscar, agregar, editar y eliminar recuerdos, con renderizado Markdown y una vista de grafo:
 
 ```bash
 python ~/.kimi-code/plugins/kimi-memory/memory_web.py
@@ -121,13 +121,24 @@ python ~/.kimi-code/plugins/kimi-memory/memory_web.py
 
 Por defecto se abre en **http://127.0.0.1:8080**.
 
-Variables de entorno:
+### Características
+
+- 🔍 Búsqueda full-text con filtros por proyecto, categoría y tags.
+- 📝 Renderizado Markdown en el contenido de los recuerdos.
+- 🕸️ Vista de grafo interactiva para explorar relaciones entre recuerdos.
+- 🖊️ Panel lateral de edición inline.
+- 📤 Exportación a JSON.
+
+### Variables de entorno
+
 - `KIMI_MEMORY_WEB_PORT` — puerto (default 8080).
 - `KIMI_MEMORY_DB` — ruta a la base de datos.
 
-Endpoints:
+### Endpoints
+
 - `GET /` — interfaz web.
 - `GET /api/memories?q=...&project=...&category=...&tags=...` — buscar recuerdos.
+- `GET /api/graph?...` — datos de nodos y edges para el grafo.
 - `POST /api/memories` — crear recuerdo (con `tags` y `related_ids`).
 - `PUT /api/memories/<id>` — editar recuerdo (con `tags` y `related_ids`).
 - `DELETE /api/memories/<id>` — eliminar recuerdo.

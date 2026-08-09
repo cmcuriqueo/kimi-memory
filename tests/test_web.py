@@ -126,6 +126,34 @@ def test_index_page(web_server):
     status, body = _request(web_server)
     assert status == 200
     assert "Kimi Memory" in body
+    assert "vis-network" in body
+    assert "marked.min.js" in body
+
+
+def test_graph_endpoint(web_server, mcp_module):
+    status, body = _request(
+        f"{web_server}/api/memories",
+        method="POST",
+        data={"content": "Nodo A", "tags": ["x"]},
+    )
+    a_id = json_loads(body)["id"]
+
+    status, body = _request(
+        f"{web_server}/api/memories",
+        method="POST",
+        data={"content": "Nodo B", "tags": ["x"], "related_ids": [a_id]},
+    )
+    b_id = json_loads(body)["id"]
+
+    status, body = _request(f"{web_server}/api/graph?tags=x")
+    assert status == 200
+    data = json_loads(body)
+    assert "nodes" in data
+    assert "edges" in data
+    ids = {n["id"] for n in data["nodes"]}
+    assert a_id in ids
+    assert b_id in ids
+    assert any(e["from"] == a_id and e["to"] == b_id for e in data["edges"])
 
 
 def test_export(web_server, mcp_module):

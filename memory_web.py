@@ -33,6 +33,8 @@ HTML_PAGE = """<!doctype html>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kimi Memory — Web Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -114,6 +116,68 @@ HTML_PAGE = """<!doctype html>
     }
     .toast.show { opacity: 1; }
     .toast.error { background: var(--danger); color: white; }
+    .view-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+    .view-toggle button { background: var(--border); color: var(--text); }
+    .view-toggle button.active { background: var(--accent); color: #0f172a; }
+    #graph {
+      width: 100%;
+      height: 600px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: none;
+    }
+    .detail-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 420px;
+      max-width: 100%;
+      height: 100vh;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      padding: 24px;
+      overflow-y: auto;
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+      z-index: 100;
+    }
+    .detail-panel.open { transform: translateX(0); }
+    .detail-panel h2 { margin-top: 0; font-size: 1.2rem; }
+    .detail-panel .close-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: transparent;
+      color: var(--text);
+      font-size: 1.5rem;
+      line-height: 1;
+      padding: 4px 8px;
+    }
+    .detail-panel .preview {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .detail-panel .preview h1,
+    .detail-panel .preview h2,
+    .detail-panel .preview h3 { margin-top: 0; }
+    .detail-panel .preview p { margin: 0 0 8px; }
+    .detail-panel .preview ul { padding-left: 20px; }
+    .memory-row { cursor: pointer; }
+    .memory-row:hover { background: rgba(255,255,255,0.03); }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      z-index: 99;
+    }
+    .overlay.open { display: block; }
   </style>
 </head>
 <body>
@@ -155,6 +219,10 @@ HTML_PAGE = """<!doctype html>
     </div>
 
     <div class="card">
+      <div class="view-toggle">
+        <button id="btn-view-list" class="active" onclick="setView('list')">Lista</button>
+        <button id="btn-view-graph" onclick="setView('graph')">Grafo</button>
+      </div>
       <div class="toolbar">
         <input id="search" type="text" placeholder="Buscar..." />
         <input id="filter-project" type="text" placeholder="Proyecto" />
@@ -163,6 +231,7 @@ HTML_PAGE = """<!doctype html>
         <button id="btn-search">Buscar</button>
         <button class="secondary" id="btn-export">Exportar JSON</button>
       </div>
+      <div id="graph"></div>
       <div id="results">
         <p class="empty">Cargando...</p>
       </div>
@@ -170,12 +239,71 @@ HTML_PAGE = """<!doctype html>
   </div>
 
   <div id="toast" class="toast"></div>
+  <div id="overlay" class="overlay" onclick="closeDetailPanel()"></div>
+
+  <aside id="detail-panel" class="detail-panel">
+    <button class="close-btn" onclick="closeDetailPanel()">&times;</button>
+    <h2 id="detail-title">Recuerdo #<span id="detail-id"></span></h2>
+    <div id="detail-preview" class="preview"></div>
+    <h3>Editar</h3>
+    <form id="detail-form" onsubmit="return false;">
+      <label>Contenido</label>
+      <textarea id="detail-content"></textarea>
+      <div class="row">
+        <div>
+          <label>Categoría</label>
+          <input id="detail-category" type="text" />
+        </div>
+        <div>
+          <label>Proyecto</label>
+          <input id="detail-project" type="text" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Tags</label>
+          <input id="detail-tags" type="text" />
+        </div>
+        <div>
+          <label>IDs relacionados</label>
+          <input id="detail-related" type="text" />
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" onclick="saveDetail()">Guardar</button>
+        <button type="button" class="secondary" onclick="deleteDetail()">Borrar</button>
+      </div>
+    </form>
+  </aside>
 
   <script>
     const $ = (id) => document.getElementById(id);
     const fmtDate = (ts) => new Date(ts * 1000).toLocaleString();
 
-    async function loadMemories() {
+    let currentView = 'list';
+    let graphNetwork = null;
+    let graphNodes = null;
+    let graphEdges = null;
+
+    const CATEGORY_COLORS = {
+      decision: '#38bdf8',
+      bugfix: '#f87171',
+      architecture: '#a78bfa',
+      todo: '#fbbf24',
+      snippet: '#4ade80',
+      note: '#94a3b8',
+      context: '#fb923c',
+      session_summary: '#22d3ee',
+      file_change: '#c084fc',
+      prompt: '#f472b6',
+      compaction_context: '#a3e635',
+    };
+
+    function getCategoryColor(category) {
+      return CATEGORY_COLORS[category] || '#94a3b8';
+    }
+
+    function getSearchParams() {
       const params = new URLSearchParams();
       const q = $('search').value.trim();
       const project = $('filter-project').value.trim();
@@ -185,11 +313,26 @@ HTML_PAGE = """<!doctype html>
       if (project) params.set('project', project);
       if (category) params.set('category', category);
       if (tags) params.set('tags', tags);
-      params.set('limit', '100');
+      params.set('limit', '200');
+      return params;
+    }
 
+    async function loadMemories() {
+      const params = getSearchParams();
       const res = await fetch('/api/memories?' + params.toString());
       const data = await res.json();
       render(data.memories || data);
+    }
+
+    function renderMarkdown(text) {
+      if (!window.marked) return escapeHtml(text);
+      return marked.parse(text || '', { breaks: true, gfm: true });
+    }
+
+    function truncateText(text, maxLen) {
+      if (!text) return '';
+      if (text.length <= maxLen) return text;
+      return text.slice(0, maxLen) + '…';
     }
 
     function render(memories) {
@@ -199,18 +342,18 @@ HTML_PAGE = """<!doctype html>
         return;
       }
       const rows = memories.map(m => `
-        <tr>
+        <tr class="memory-row" onclick="openDetailPanel(${m.id})">
           <td>
-            <div>${escapeHtml(m.content)}</div>
+            <div class="md-preview">${renderMarkdown(truncateText(m.content, 300))}</div>
             <div class="meta">${fmtDate(m.created_at)} · ID ${m.id}</div>
             ${(m.tags && m.tags.length) ? '<div class="meta">🏷️ ' + m.tags.map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('') + '</div>' : ''}
-            ${(m.related_ids && m.related_ids.length) ? '<div class="meta">🔗 Relacionados: ' + m.related_ids.map(id => `<a href="#" onclick="editMemory(${id}); return false;">#${id}</a>`).join(', ') + '</div>' : ''}
+            ${(m.related_ids && m.related_ids.length) ? '<div class="meta">🔗 Relacionados: ' + m.related_ids.map(id => `<a href="#" onclick="event.stopPropagation(); openDetailPanel(${id})">#${id}</a>`).join(', ') + '</div>' : ''}
           </td>
-          <td><span class="badge">${escapeHtml(m.category || 'note')}</span></td>
+          <td><span class="badge" style="border-color:${getCategoryColor(m.category || 'note')}">${escapeHtml(m.category || 'note')}</span></td>
           <td>${escapeHtml(m.project || '—')}</td>
           <td>
-            <button class="secondary" onclick="editMemory(${m.id})">Editar</button>
-            <button class="danger" onclick="deleteMemory(${m.id})">Borrar</button>
+            <button class="secondary" onclick="event.stopPropagation(); openDetailPanel(${m.id})">Editar</button>
+            <button class="danger" onclick="event.stopPropagation(); deleteMemory(${m.id})">Borrar</button>
           </td>
         </tr>
       `).join('');
@@ -243,32 +386,134 @@ HTML_PAGE = """<!doctype html>
       if (res.ok) {
         toast(id ? 'Actualizado' : 'Guardado');
         resetForm();
-        loadMemories();
+        refreshActiveView();
       } else {
         toast('Error al guardar', true);
       }
     });
 
     $('cancel-btn').addEventListener('click', resetForm);
-    $('btn-search').addEventListener('click', loadMemories);
+    $('btn-search').addEventListener('click', refreshActiveView);
     $('btn-export').addEventListener('click', () => { window.location = '/api/export'; });
-    $('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadMemories(); });
+    $('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') refreshActiveView(); });
 
-    async function editMemory(id) {
+    function refreshActiveView() {
+      if (currentView === 'graph') loadGraph();
+      else loadMemories();
+    }
+
+    function setView(view) {
+      currentView = view;
+      $('btn-view-list').classList.toggle('active', view === 'list');
+      $('btn-view-graph').classList.toggle('active', view === 'graph');
+      $('results').style.display = view === 'list' ? 'block' : 'none';
+      $('graph').style.display = view === 'graph' ? 'block' : 'none';
+      if (view === 'graph') loadGraph();
+    }
+
+    async function loadGraph() {
+      const params = getSearchParams();
+      const res = await fetch('/api/graph?' + params.toString());
+      const data = await res.json();
+      const container = $('graph');
+
+      graphNodes = new vis.DataSet(data.nodes.map(n => ({
+        id: n.id,
+        label: n.label,
+        title: n.title,
+        color: {
+          background: getCategoryColor(n.category),
+          border: '#fff',
+          highlight: { background: '#fff', border: getCategoryColor(n.category) },
+        },
+        font: { color: '#e2e8f0' },
+      })));
+
+      graphEdges = new vis.DataSet(data.edges.map(e => ({
+        from: e.from,
+        to: e.to,
+        color: { color: '#64748b' },
+      })));
+
+      const options = {
+        nodes: { shape: 'dot', size: 16 },
+        edges: { width: 2, smooth: true },
+        physics: { stabilization: false },
+        interaction: { hover: true },
+      };
+
+      if (graphNetwork) graphNetwork.destroy();
+      graphNetwork = new vis.Network(container, { nodes: graphNodes, edges: graphEdges }, options);
+      graphNetwork.on('click', (params) => {
+        if (params.nodes.length === 1) openDetailPanel(params.nodes[0]);
+      });
+    }
+
+    let detailMemoryId = null;
+
+    async function openDetailPanel(id) {
       const res = await fetch('/api/memories?id=' + id);
       const data = await res.json();
       const m = (data.memories || data)[0];
       if (!m) return;
-      $('memory-id').value = m.id;
-      $('content').value = m.content;
-      $('category').value = m.category || '';
-      $('project').value = m.project || '';
-      $('tags').value = (m.tags || []).join(', ');
-      $('related_ids').value = (m.related_ids || []).join(', ');
-      $('form-title').textContent = 'Editar recuerdo #' + m.id;
-      $('save-btn').textContent = 'Actualizar';
-      $('cancel-btn').style.display = '';
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      detailMemoryId = m.id;
+      $('detail-id').textContent = m.id;
+      $('detail-preview').innerHTML = renderMarkdown(m.content);
+      $('detail-content').value = m.content;
+      $('detail-category').value = m.category || '';
+      $('detail-project').value = m.project || '';
+      $('detail-tags').value = (m.tags || []).join(', ');
+      $('detail-related').value = (m.related_ids || []).join(', ');
+
+      $('detail-panel').classList.add('open');
+      $('overlay').classList.add('open');
+    }
+
+    function closeDetailPanel() {
+      detailMemoryId = null;
+      $('detail-panel').classList.remove('open');
+      $('overlay').classList.remove('open');
+    }
+
+    async function saveDetail() {
+      if (!detailMemoryId) return;
+      const body = {
+        content: $('detail-content').value,
+        category: $('detail-category').value,
+        project: $('detail-project').value,
+        tags: parseCommaList($('detail-tags').value),
+        related_ids: parseCommaList($('detail-related').value).map(Number).filter(n => n > 0),
+      };
+      const res = await fetch(`/api/memories/${detailMemoryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        toast('Actualizado');
+        closeDetailPanel();
+        refreshActiveView();
+      } else {
+        toast('Error al guardar', true);
+      }
+    }
+
+    async function deleteDetail() {
+      if (!detailMemoryId) return;
+      if (!confirm('¿Eliminar recuerdo #' + detailMemoryId + '?')) return;
+      const res = await fetch('/api/memories/' + detailMemoryId, { method: 'DELETE' });
+      if (res.ok) {
+        toast('Eliminado');
+        closeDetailPanel();
+        refreshActiveView();
+      } else {
+        toast('Error al eliminar', true);
+      }
+    }
+
+    async function editMemory(id) {
+      openDetailPanel(id);
     }
 
     async function deleteMemory(id) {
@@ -276,7 +521,7 @@ HTML_PAGE = """<!doctype html>
       const res = await fetch('/api/memories/' + id, { method: 'DELETE' });
       if (res.ok) {
         toast('Eliminado');
-        loadMemories();
+        refreshActiveView();
       } else {
         toast('Error al eliminar', true);
       }
@@ -388,6 +633,53 @@ class Handler(BaseHTTPRequestHandler):
                     self._json_response({"error": str(e)}, 400)
                     return
             self._json_response(result)
+            return
+
+        if path == "/api/graph":
+            q = qs.get("q", [""])[0]
+            project = qs.get("project", [None])[0]
+            category = qs.get("category", [None])[0]
+            tags_raw = qs.get("tags", [""])[0]
+            tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+            limit = int(qs.get("limit", ["200"])[0])
+            try:
+                memories = memory_mcp.search_memories(
+                    query=q,
+                    limit=limit,
+                    project=project,
+                    tags=tags or None,
+                )
+                if category:
+                    memories = [m for m in memories if (m.get("category") or "") == category]
+            except Exception as e:
+                self._json_response({"error": str(e)}, 400)
+                return
+
+            ids = {m["id"] for m in memories}
+            nodes = []
+            for m in memories:
+                label = m["content"].split("\n")[0][:40]
+                nodes.append({
+                    "id": m["id"],
+                    "label": label,
+                    "category": m.get("category") or "note",
+                    "title": m["content"][:200],
+                    "content": m["content"],
+                    "project": m.get("project"),
+                    "tags": m.get("tags", []),
+                })
+
+            edges = []
+            seen_edges = set()
+            for m in memories:
+                for rid in m.get("related_ids", []):
+                    if rid in ids:
+                        key = tuple(sorted((m["id"], rid)))
+                        if key not in seen_edges:
+                            seen_edges.add(key)
+                            edges.append({"from": m["id"], "to": rid})
+
+            self._json_response({"nodes": nodes, "edges": edges})
             return
 
         if path == "/api/export":
