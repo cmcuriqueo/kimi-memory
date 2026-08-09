@@ -2,6 +2,11 @@
 
 Todos los cambios notables se documentan en este archivo.
 
+## [Unreleased]
+
+### Added
+- Soporte para tags `<private>...</private>` en `memory_add`: el contenido marcado como privado se elimina antes de guardar, evitando que datos sensibles persistan.
+
 ## [0.1.0] - 2026-08-09
 
 ### Added

@@ -125,6 +125,18 @@ def normalize_category(category: Any) -> str | None:
     return cat if cat in CATEGORIES else "note"
 
 
+_PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_private_sections(content: str) -> str:
+    """Elimina secciones marcadas como <private>...</private> del contenido.
+
+    Útil para evitar que datos sensibles (contraseñas, tokens, etc.) se
+    guarden en la memoria persistente.
+    """
+    return _PRIVATE_TAG_RE.sub("", content)
+
+
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -138,12 +150,15 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 def add_memory(content: str, category: str | None = None, project: str | None = None) -> dict[str, Any]:
     if not content or not str(content).strip():
         raise ValueError("content no puede estar vacío")
+    cleaned = strip_private_sections(content).strip()
+    if not cleaned:
+        return {"id": None, "added": False, "reason": "El contenido quedó vacío tras eliminar secciones <private>."}
     cat = normalize_category(category)
     proj = str(project).strip() if project else None
     now = int(time.time())
     cur = DB.execute(
         "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (content.strip(), cat, proj, now, now),
+        (cleaned, cat, proj, now, now),
     )
     DB.commit()
     return {"id": cur.lastrowid, "added": True}
@@ -224,7 +239,8 @@ TOOLS = [
         "description": (
             "Guarda una observación, decisión o contexto en la memoria persistente. "
             "Úsalo después de resolver un bug, tomar una decisión de diseño, o encontrar "
-            "información importante que quieras recordar en sesiones futuras."
+            "información importante que quieras recordar en sesiones futuras. "
+            "Envuelve datos sensibles en <private>...</private> para que no se guarden."
         ),
         "inputSchema": {
             "type": "object",

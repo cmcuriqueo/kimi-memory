@@ -1,38 +1,29 @@
 # Roadmap / Mejoras pendientes
 
-Este archivo funciona como backlog público. Se van tachando a medida que se implementan y se publican en el changelog.
+Backlog inspirado en la comparación con `claude-mem` y las necesidades propias de `kimi-memory`. Se van tachando a medida que se implementan.
 
-## 🚀 Quick wins
+## 🎯 Próximas 7 mejoras
 
-- [ ] **Categorías personalizables**: permitir que el usuario cree sus propias categorías además de las 7 fijas.
-- [ ] **Filtros por fecha en búsquedas**: soportar `since`, `before`, `after` en `memory_search`.
-- [ ] **`memory_summary`**: resumir recuerdos de un proyecto para retomar contexto rápido.
-- [ ] **Exportar / importar memoria**: backup a JSON/CSV y restauración.
-- [ ] **Validaciones y límites**: tamaño máximo de contenido, sanitización y prevención de duplicados exactos.
+1. [x] **Tags `<private>` para privacidad** — Eliminar del contenido todo lo que esté entre `<private>...</private>` antes de guardar, para que datos sensibles no persistan.
+2. [ ] **Progressive disclosure en SKILL.md** — Reescribir el skill para que el flujo recomendado sea: `memory_search` (índice ligero) → `memory_timeline` (contexto) → `memory_get` (detalle completo), ahorrando tokens.
+3. [ ] **Filtros por fecha en `memory_search`** — Soportar `since`, `before` y `after` en las búsquedas.
+4. [ ] **Exportar / importar memoria a JSON** — Backup y restauración portable de la memoria.
+5. [ ] **Categorías personalizables** — Permitir categorías definidas por el usuario, no solo las 7 fijas.
+6. [ ] **Hooks de sesión para auto-guardar contexto** — Aprovechar los hooks de Kimi CLI para resumir y guardar automáticamente al finalizar una sesión.
+7. [ ] **Web Viewer UI básico** — Servidor HTTP local opcional para ver y buscar recuerdos desde el navegador.
 
-## ⚙️ Funcionalidad
+## ✅ Hecho
 
-- [ ] **Tags libres**: además de la categoría única, permitir múltiples tags por recuerdo.
-- [ ] **Relaciones entre recuerdos**: `related_ids` para formar una red de conocimiento.
-- [ ] **Prioridad / importancia**: score de importancia y ranking en búsquedas.
-- [ ] **Memoria por workspace automática**: detectar el directorio de trabajo actual y asociar recuerdos automáticamente.
-- [ ] **Auto-backup de la DB**: copias periódicas de `memory.db`.
-
-## 🔥 Alto impacto
-
-- [ ] **Búsqueda semántica con embeddings locales** (opcional, sin romper el modo sin dependencias).
-- [ ] **Auto-detección de qué memorizar**: Kimi decide cuándo guardar sin que el usuario lo pida.
-- [ ] **Recuperación proactiva de contexto**: al iniciar sesión, sugerir recuerdos relevantes según el tema actual.
-- [ ] **Interfaz web local**: UI ligera para ver/editar/buscar recuerdos en el navegador.
-- [ ] **Sincronización entre dispositivos**: opción de sincronizar la DB vía storage personal (S3/R2/Git).
-
-## 🛠️ Técnicas
-
-- [x] Forzar UTF-8 en stdio para evitar problemas de encoding en Windows.
+- [x] Servidor MCP stdio con SQLite + FTS5.
+- [x] 6 herramientas MCP básicas.
+- [x] Skill e instaladores para Kimi Code CLI.
+- [x] Forzar UTF-8 en stdio para Windows.
 - [x] Soporte para `ping` y manejo robusto de errores.
-- [ ] Tests unitarios con pytest.
-- [ ] Migraciones de schema.
-- [ ] Logging configurable.
-- [ ] Encriptación opcional de la base de datos.
-- [ ] Empaquetado con `pyproject.toml` y publicación en PyPI (opcional).
-- [ ] CI/CD básico (GitHub Actions) para tests.
+
+## 🧊 Heladera (ideas futuras)
+
+- Búsqueda semántica con embeddings locales.
+- Resumen automático con IA.
+- Sincronización entre dispositivos.
+- Publicación en PyPI / npm.
+- Tests unitarios con pytest y CI/CD.

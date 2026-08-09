@@ -53,7 +53,11 @@ Este skill conecta Kimi con una memoria local persistente (SQLite + FTS5) a trav
 
 - **Sé conciso pero completo** en `content`. Incluye el "qué", el "porqué" y, si aplica, el "cómo".
 - **Usa `project`** cuando el recuerdo esté ligado a un proyecto concreto. Si no estás seguro, omítelo.
-- **No guardues datos sensibles** (contraseñas, tokens, secretos). La base de datos vive en texto plano local.
+- **No guardes datos sensibles** (contraseñas, tokens, secretos). La base de datos vive en texto plano local.
+- **Si el usuario menciona datos sensibles**, envuélvelos en `<private>...</private>` dentro del `content`. El servidor los eliminará antes de guardar. Ejemplo:
+  ```
+  Usamos la API key <private>sk-abc123</private> para el servicio de pagos.
+  ```
 - **Busca antes de preguntar**: si el usuario menciona algo que pudiste haber hecho antes, usa `memory_search` primero.
 - **Limpia cuando sea necesario**: usa `memory_delete` para eliminar recuerdos obsoletos o duplicados.
 
