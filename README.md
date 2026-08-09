@@ -15,23 +15,26 @@ Guarda decisiones, bugfixes, snippets y contexto entre sesiones usando **SQLite 
 
 ## 🚀 Instalación
 
-### Clonar el repo
+### Con npx (recomendado)
 
 ```bash
-git clone https://github.com/TU_USUARIO/kimi-memory.git
+npx kimi-memory install
+```
+
+Con el hook de auto-guardado de sesiones:
+
+```bash
+npx kimi-memory install --hook
+```
+
+### Desde el repo
+
+```bash
+git clone https://github.com/cmcuriqueo/kimi-memory.git
 cd kimi-memory
-```
-
-### Bash / Git Bash / WSL / macOS / Linux
-
-```bash
-./install.sh
-```
-
-### PowerShell (Windows)
-
-```powershell
-.\install.ps1
+./install.sh       # bash / Git Bash / WSL / macOS / Linux
+# o
+.\install.ps1      # PowerShell (Windows)
 ```
 
 Los instaladores:
@@ -39,6 +42,7 @@ Los instaladores:
 2. Copian el plugin a `~/.kimi-code/plugins/kimi-memory/`.
 3. Copian el skill a `~/.kimi/skills/kimi-memory/`.
 4. Registran el servidor MCP en `~/.kimi/mcp.json`.
+5. Opcionalmente configuran el hook `SessionEnd` en `~/.kimi/config.toml`.
 
 > ⚠️ Reiniciá Kimi Code CLI después de instalar.
 

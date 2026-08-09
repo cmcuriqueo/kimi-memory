@@ -1,0 +1,45 @@
+{
+  "name": "kimi-memory",
+  "version": "0.1.0",
+  "description": "Installer for kimi-memory MCP server — persistent memory for Kimi Code CLI",
+  "main": "cli.js",
+  "bin": {
+    "kimi-memory": "./cli.js"
+  },
+  "scripts": {
+    "test": "node cli.js --help"
+  },
+  "files": [
+    "cli.js",
+    "memory_mcp.py",
+    "memory_web.py",
+    "test_mcp.py",
+    "kimi.plugin.json",
+    "hooks/session_end.py",
+    "skills/kimi-memory/SKILL.md",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "kimi",
+    "mcp",
+    "memory",
+    "cli",
+    "ai",
+    "agent"
+  ],
+  "author": "Matías",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cmcuriqueo/kimi-memory.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cmcuriqueo/kimi-memory/issues"
+  },
+  "homepage": "https://github.com/cmcuriqueo/kimi-memory#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
