@@ -55,6 +55,18 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 # Utilidades compartidas
 # ---------------------------------------------------------------------------
+def _save_memory(*args, **kwargs) -> dict[str, Any]:
+    """Guarda un recuerdo y sincroniza con Git (commit local, sin push)."""
+    result = memory_mcp.add_memory(*args, **kwargs)
+    try:
+        repo = memory_mcp.get_git_repo()
+        if repo:
+            memory_mcp.sync_git(repo, full=False)
+    except Exception as e:
+        print(f"[kimi-memory-hook] Sync Git falló: {e}", file=sys.stderr)
+    return result
+
+
 def derive_project(cwd: str) -> str | None:
     path = Path(cwd)
     name = path.name.strip()
@@ -198,7 +210,7 @@ def handle_session_end(payload: dict[str, Any]) -> None:
             if tag not in tags:
                 tags.append(tag)
 
-    result = memory_mcp.add_memory(
+    result = _save_memory(
         content=content,
         category="session_summary",
         project=project,
@@ -239,7 +251,7 @@ def handle_post_tool_use(payload: dict[str, Any]) -> None:
         tags.append(path_obj.name.lower())
 
     content = f"Archivo modificado durante la sesión: {file_path}"
-    result = memory_mcp.add_memory(
+    result = _save_memory(
         content=content,
         category="file_change",
         project=project,
@@ -302,7 +314,7 @@ def handle_user_prompt_submit(payload: dict[str, Any]) -> None:
     project = derive_project(cwd)
     snippet = prompt[:500] + ("…" if len(prompt) > 500 else "")
     content = f"Prompt del usuario: {snippet}"
-    result = memory_mcp.add_memory(
+    result = _save_memory(
         content=content,
         category="prompt",
         project=project,
@@ -323,7 +335,7 @@ def handle_pre_compact(payload: dict[str, Any]) -> None:
         f"(trigger: {trigger}, tokens: {token_count}). "
         f"Se va a resumir o descartar contexto antiguo."
     )
-    result = memory_mcp.add_memory(
+    result = _save_memory(
         content=content,
         category="compaction_context",
         project=project,
@@ -343,7 +355,7 @@ def handle_stop_failure(payload: dict[str, Any]) -> None:
     project = derive_project(cwd)
     snippet = error_message[:1000] + ("…" if len(error_message) > 1000 else "")
     content = f"Error en sesión ({error_type}): {snippet}"
-    result = memory_mcp.add_memory(
+    result = _save_memory(
         content=content,
         category="bugfix",
         project=project,
