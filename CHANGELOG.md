@@ -11,6 +11,7 @@ Todos los cambios notables se documentan en este archivo.
 - `memory_export` e `memory_import`: backup y restauración de la memoria a/desde JSON.
 - Categorías personalizables: el usuario puede usar cualquier categoría, no solo las 7 predefinidas.
 - Hook `SessionEnd` (`hooks/session_end.py`): resume automáticamente la sesión y la guarda como `session_summary`.
+- Web Viewer UI (`memory_web.py`): servidor HTTP local para ver, buscar, agregar, editar, eliminar y exportar recuerdos desde el navegador.
 
 ### Fixed
 - `memory_search` incluye `updated_at` en el SELECT para evitar error al construir el snippet.

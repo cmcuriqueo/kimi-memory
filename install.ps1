@@ -35,6 +35,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Copiando plugin a $PluginDir..."
 New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
 Copy-Item -Path "$RepoDir\memory_mcp.py" -Destination "$PluginDir\memory_mcp.py" -Force
+Copy-Item -Path "$RepoDir\memory_web.py" -Destination "$PluginDir\memory_web.py" -Force
 Copy-Item -Path "$RepoDir\test_mcp.py" -Destination "$PluginDir\test_mcp.py" -Force
 Copy-Item -Path "$RepoDir\kimi.plugin.json" -Destination "$PluginDir\kimi.plugin.json" -Force
 

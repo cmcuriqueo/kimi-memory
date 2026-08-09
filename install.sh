@@ -46,6 +46,7 @@ PY
 echo "Copiando plugin a ${PLUGIN_DIR}..."
 mkdir -p "${PLUGIN_DIR}"
 cp -f "${REPO_DIR}/memory_mcp.py" "${PLUGIN_DIR}/"
+cp -f "${REPO_DIR}/memory_web.py" "${PLUGIN_DIR}/"
 cp -f "${REPO_DIR}/test_mcp.py" "${PLUGIN_DIR}/"
 cp -f "${REPO_DIR}/kimi.plugin.json" "${PLUGIN_DIR}/"
 

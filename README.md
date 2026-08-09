@@ -80,6 +80,7 @@ y enviá por stdin:
 ```
 kimi-memory/
 ├── memory_mcp.py          # Servidor MCP
+├── memory_web.py          # Visor web local
 ├── test_mcp.py            # Tests manuales
 ├── skills/
 │   └── kimi-memory/
@@ -100,6 +101,28 @@ Podés cambiar la ubicación de la base de datos con la variable de entorno `KIM
 ```bash
 export KIMI_MEMORY_DB=/ruta/a/tu/memory.db
 ```
+
+## 🌐 Visor web
+
+Podés levantar una interfaz web local para ver, buscar, agregar, editar y eliminar recuerdos:
+
+```bash
+python ~/.kimi-code/plugins/kimi-memory/memory_web.py
+```
+
+Por defecto se abre en **http://127.0.0.1:8080**.
+
+Variables de entorno:
+- `KIMI_MEMORY_WEB_PORT` — puerto (default 8080).
+- `KIMI_MEMORY_DB` — ruta a la base de datos.
+
+Endpoints:
+- `GET /` — interfaz web.
+- `GET /api/memories?q=...&project=...&category=...` — buscar recuerdos.
+- `POST /api/memories` — crear recuerdo.
+- `PUT /api/memories/<id>` — editar recuerdo.
+- `DELETE /api/memories/<id>` — eliminar recuerdo.
+- `GET /api/export` — descargar JSON.
 
 ## 🪝 Hooks (auto-guardar contexto de sesión)
 
