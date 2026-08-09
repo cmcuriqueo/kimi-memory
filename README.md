@@ -128,27 +128,54 @@ Endpoints:
 - `DELETE /api/memories/<id>` — eliminar recuerdo.
 - `GET /api/export` — descargar JSON.
 
-## 🪝 Hooks (auto-guardar contexto de sesión)
+## 🪝 Hooks (auto-guardar contexto)
 
-Kimi Code CLI puede ejecutar hooks en eventos del ciclo de vida. Kimi Memory incluye un hook `SessionEnd` que resume automáticamente cada sesión y lo guarda como un recuerdo con categoría `session_summary`.
+Kimi Code CLI puede ejecutar hooks en eventos del ciclo de vida. Kimi Memory incluye un hook unificado (`memory_hook.py`) que guarda automáticamente contexto útil en varios momentos:
 
-Para activarlo, agregá esto a `~/.kimi/config.toml`:
+| Evento | Qué guarda | Categoría |
+|---|---|---|
+| `SessionEnd` | Resumen de la sesión (temas, herramientas, cwd). | `session_summary` |
+| `PostToolUse` | Archivos modificados con `WriteFile` o `StrReplaceFile`. | `file_change` |
+| `UserPromptSubmit` | Prompts del usuario que parecen relevantes (bugs, decisiones, arquitectura, etc.). | `prompt` |
+| `PreCompact` | Compactaciones de contexto (trigger y tokens). | `compaction_context` |
+| `StopFailure` | Errores al finalizar un turno. | `bugfix` |
+
+### Activación automática
+
+```bash
+npx kimi-memory install --hook
+```
+
+### Activación manual
+
+Agregá esto a `~/.kimi/config.toml`:
 
 ```toml
 [[hooks]]
 event = "SessionEnd"
-command = "python ~/.kimi-code/plugins/kimi-memory/hooks/session_end.py"
-```
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
 
-En Windows:
-
-```toml
 [[hooks]]
-event = "SessionEnd"
-command = "python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\session_end.py"
+event = "PostToolUse"
+matcher = "WriteFile|StrReplaceFile"
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
+
+[[hooks]]
+event = "PreCompact"
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
+
+[[hooks]]
+event = "StopFailure"
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
 ```
 
-> ⚠️ El hook requiere que el plugin esté instalado (ver `install.sh` / `install.ps1`).
+En Windows reemplazá `~/.kimi-code` por `%USERPROFILE%\\.kimi-code`.
+
+> ⚠️ Los hooks requieren que el plugin esté instalado (ver `install.sh` / `install.ps1`).
 
 ## 🗺️ Roadmap
 

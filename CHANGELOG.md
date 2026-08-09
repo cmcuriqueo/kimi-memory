@@ -10,7 +10,12 @@ Todos los cambios notables se documentan en este archivo.
 - Filtros por fecha en `memory_search`: soporta `since`/`after` y `before` en formato ISO 8601 o relativo (`7d`, `1h`, `30m`, `2w`, `3mo`, `1y`).
 - `memory_export` e `memory_import`: backup y restauración de la memoria a/desde JSON.
 - Categorías personalizables: el usuario puede usar cualquier categoría, no solo las 7 predefinidas.
-- Hook `SessionEnd` (`hooks/session_end.py`): resume automáticamente la sesión y la guarda como `session_summary`.
+- Hook unificado `memory_hook.py` para múltiples eventos:
+  - `SessionEnd`: guarda resumen de sesión como `session_summary`.
+  - `PostToolUse`: guarda archivos modificados como `file_change`.
+  - `UserPromptSubmit`: guarda prompts relevantes como `prompt`.
+  - `PreCompact`: guarda contexto de compactación como `compaction_context`.
+  - `StopFailure`: guarda errores como `bugfix`.
 - Web Viewer UI (`memory_web.py`): servidor HTTP local para ver, buscar, agregar, editar, eliminar y exportar recuerdos desde el navegador.
 - Instalador npm (`npx kimi-memory install`): instala todo con un solo comando, con opción `--hook` para activar el hook SessionEnd.
 

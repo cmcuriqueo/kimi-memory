@@ -19,6 +19,7 @@ Backlog inspirado en la comparación con `claude-mem` y las necesidades propias 
 - [x] Skill e instaladores para Kimi Code CLI.
 - [x] Forzar UTF-8 en stdio para Windows.
 - [x] Soporte para `ping` y manejo robusto de errores.
+- [x] Hooks de ciclo de vida (`SessionEnd`, `PostToolUse`, `UserPromptSubmit`, `PreCompact`, `StopFailure`).
 
 ## 🧊 Heladera (ideas futuras)
 

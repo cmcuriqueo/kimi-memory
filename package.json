@@ -15,7 +15,7 @@
     "memory_web.py",
     "test_mcp.py",
     "kimi.plugin.json",
-    "hooks/session_end.py",
+    "hooks/memory_hook.py",
     "skills/kimi-memory/SKILL.md",
     "README.md",
     "LICENSE",

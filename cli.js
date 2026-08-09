@@ -143,11 +143,71 @@ function removeMcpConfig() {
   }
 }
 
+const HOOK_EVENTS = [
+  { event: "SessionEnd" },
+  { event: "PostToolUse", matcher: "WriteFile|StrReplaceFile" },
+  { event: "UserPromptSubmit" },
+  { event: "PreCompact" },
+  { event: "StopFailure" },
+];
+
 function hookCommand() {
-  const hookPath = path.join(PLUGIN_DIR, "hooks", "session_end.py");
+  const hookPath = path.join(PLUGIN_DIR, "hooks", "memory_hook.py");
   return IS_WIN
-    ? `python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\session_end.py`
+    ? `python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\memory_hook.py`
     : `python ${hookPath}`;
+}
+
+function legacyHookCommands() {
+  // Comandos anteriores que deben removerse al actualizar.
+  const legacyPath = path.join(PLUGIN_DIR, "hooks", "session_end.py");
+  return IS_WIN
+    ? [
+        `python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\session_end.py`,
+        `python ${legacyPath}`,
+      ]
+    : [`python ${legacyPath}`];
+}
+
+function hookBlock(event, matcher) {
+  const cmd = hookCommand();
+  let block = `[[hooks]]\nevent = "${event}"\n`;
+  if (matcher) {
+    block += `matcher = "${matcher}"\n`;
+  }
+  block += IS_WIN
+    ? `command = '${cmd}'\n`
+    : `command = "${cmd}"\n`;
+  return block;
+}
+
+function removeHookBlocks(content, commands) {
+  const cmdSet = new Set(Array.isArray(commands) ? commands : [commands]);
+  const lines = content.split(/\r?\n/);
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i].trim() === "[[hooks]]") {
+      const block = [];
+      let j = i;
+      while (j < lines.length) {
+        block.push(lines[j]);
+        j++;
+        if (j < lines.length && lines[j].trim() === "[[hooks]]") {
+          break;
+        }
+      }
+      const blockText = block.join("\n");
+      if (![...cmdSet].some((cmd) => blockText.includes(cmd))) {
+        out.push(...block);
+      }
+      i = j;
+      continue;
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join("\n");
 }
 
 function installHook() {
@@ -157,47 +217,36 @@ function installHook() {
   }
   let content = fs.readFileSync(KIMI_CONFIG, "utf-8");
   const cmd = hookCommand();
-  const hookBlock = IS_WIN
-    ? `[[hooks]]\nevent = "SessionEnd"\ncommand = '${cmd}'\n`
-    : `[[hooks]]\nevent = "SessionEnd"\ncommand = "${cmd}"\n`;
+
+  // Remover configuraciones viejas (session_end.py) y evitar duplicados.
+  content = removeHookBlocks(content, [...legacyHookCommands(), cmd]);
 
   if (content.includes(cmd)) {
-    log("El hook SessionEnd ya está configurado.");
+    log("Los hooks de kimi-memory ya están configurados.");
     return;
   }
 
+  const blocks = HOOK_EVENTS.map((h) => hookBlock(h.event, h.matcher)).join("\n");
+
   // Kimi por defecto pone `hooks = []`, que es incompatible con [[hooks]].
-  // Reemplazamos ese array vacío por el array of tables.
+  // Reemplazamos ese array vacío por los bloques de hooks.
   if (/^\s*hooks\s*=\s*\[\]\s*$/m.test(content)) {
-    content = content.replace(/^\s*hooks\s*=\s*\[\]\s*$/m, hookBlock.trim());
+    content = content.replace(/^\s*hooks\s*=\s*\[\]\s*$/m, blocks.trim());
   } else {
-    content = content.trimEnd() + "\n\n" + hookBlock;
+    content = content.trimEnd() + "\n\n" + blocks;
   }
 
   fs.writeFileSync(KIMI_CONFIG, content, "utf-8");
-  ok("Hook SessionEnd agregado a config.toml");
+  ok("Hooks de kimi-memory agregados a config.toml");
 }
 
 function removeHook() {
   if (!fs.existsSync(KIMI_CONFIG)) return;
   let content = fs.readFileSync(KIMI_CONFIG, "utf-8");
   const cmd = hookCommand();
-  const lines = content.split(/\r?\n/);
-  const out = [];
-  let skip = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() === "[[hooks]]" && lines[i + 1] && lines[i + 1].includes("SessionEnd") && lines[i + 2] && lines[i + 2].includes(cmd)) {
-      skip = 3;
-      continue;
-    }
-    if (skip > 0) {
-      skip--;
-      continue;
-    }
-    out.push(lines[i]);
-  }
-  fs.writeFileSync(KIMI_CONFIG, out.join("\n"), "utf-8");
-  ok("Hook SessionEnd removido de config.toml");
+  content = removeHookBlocks(content, [...legacyHookCommands(), cmd]);
+  fs.writeFileSync(KIMI_CONFIG, content, "utf-8");
+  ok("Hooks de kimi-memory removidos de config.toml");
 }
 
 function install(includeHook) {
@@ -228,7 +277,7 @@ function install(includeHook) {
   updateMcpConfig(py.abs);
 
   if (includeHook) {
-    log("Configurando hook SessionEnd...");
+    log("Configurando hooks de Kimi Memory...");
     installHook();
   }
 
@@ -236,7 +285,7 @@ function install(includeHook) {
   ok("Instalación completa.");
   log("Reiniciá Kimi Code CLI para que reconozca el servidor MCP.");
   if (includeHook) {
-    log("El hook SessionEnd guardará automáticamente resúmenes al cerrar sesiones.");
+    log("Los hooks guardarán automáticamente contexto de sesión, cambios de archivos, prompts, compactación y errores.");
   }
 }
 
@@ -272,7 +321,7 @@ Uso:
   npx kimi-memory --help             Muestra esta ayuda.
 
 Opciones:
-  --hook    Configura el hook SessionEnd para guardar resúmenes automáticos.
+  --hook    Configura los hooks de Kimi Memory (SessionEnd, PostToolUse, UserPromptSubmit, PreCompact, StopFailure).
 
 Requiere:
   - Node.js 18+

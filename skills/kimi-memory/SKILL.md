@@ -73,7 +73,15 @@ También podés crear categorías propias, por ejemplo: `security`, `refactor`, 
 
 ## Auto-guardado de sesiones
 
-Si el usuario activó el hook `SessionEnd`, vas a encontrar resúmenes automáticos de sesiones con categoría `session_summary`. Revisalos con `memory_recent` o `memory_search` al retomar un proyecto.
+Si el usuario activó los hooks de Kimi Memory, vas a encontrar recuerdos automáticos con estas categorías:
+
+- `session_summary`: resumen generado al cerrar una sesión.
+- `file_change`: archivos modificados durante la sesión.
+- `prompt`: prompts relevantes del usuario (decisiones, bugs, arquitectura, etc.).
+- `compaction_context`: momentos en los que se compactó el contexto.
+- `bugfix`: errores capturados al fallar un turno.
+
+Revisalos con `memory_recent` o `memory_search` al retomar un proyecto.
 
 ## Ubicación de los datos
 
