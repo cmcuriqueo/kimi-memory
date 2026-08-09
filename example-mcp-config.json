@@ -1,0 +1,14 @@
+{
+    "mcpServers":  {
+                       "kimi-memory":  {
+                                           "command":  "C:\\Users\\matias\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+                                           "args":  [
+                                                        "-u",
+                                                        "C:\\Users\\matias\\.kimi-code\\plugins\\kimi-memory\\memory_mcp.py"
+                                                    ],
+                                           "env":  {
+                                                       "KIMI_MEMORY_DB":  "C:\\Users\\matias\\.kimi-code\\memory.db"
+                                                   }
+                                       }
+                   }
+}
