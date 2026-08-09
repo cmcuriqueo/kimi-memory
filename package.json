@@ -1,6 +1,6 @@
 {
   "name": "kimi-memory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Installer for kimi-memory MCP server — persistent memory for Kimi Code CLI",
   "main": "cli.js",
   "bin": {
