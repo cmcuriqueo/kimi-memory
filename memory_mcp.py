@@ -112,6 +112,30 @@ def init_db() -> sqlite3.Connection:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)"
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_tags (
+            memory_id INTEGER NOT NULL,
+            tag TEXT NOT NULL,
+            PRIMARY KEY (memory_id, tag),
+            FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_tags_tag ON memory_tags(tag)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_relations (
+            memory_id INTEGER NOT NULL,
+            related_memory_id INTEGER NOT NULL,
+            PRIMARY KEY (memory_id, related_memory_id),
+            FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+            FOREIGN KEY (related_memory_id) REFERENCES memories(id) ON DELETE CASCADE
+        )
+        """
+    )
     conn.commit()
     return conn
 
@@ -127,6 +151,85 @@ def normalize_category(category: Any) -> str | None:
         return None
     # Se permiten categorías personalizadas; las predefinidas son sugerencias.
     return cat
+
+
+def normalize_tags(tags: Any) -> list[str]:
+    """Normaliza una lista de tags: minúsculas, trim, únicos, no vacíos."""
+    if tags is None:
+        return []
+    if isinstance(tags, str):
+        tags = [tags]
+    if not isinstance(tags, (list, tuple, set)):
+        return []
+    result: set[str] = set()
+    for t in tags:
+        if t is None:
+            continue
+        s = str(t).lower().strip()
+        if s:
+            result.add(s)
+    return sorted(result)
+
+
+def normalize_related_ids(related_ids: Any, memory_id: int | None = None) -> list[int]:
+    """Normaliza una lista de IDs relacionados, descartando duplicados y el propio ID."""
+    if related_ids is None:
+        return []
+    if isinstance(related_ids, (int, str)):
+        related_ids = [related_ids]
+    if not isinstance(related_ids, (list, tuple, set)):
+        return []
+    result: set[int] = set()
+    for rid in related_ids:
+        try:
+            i = int(rid)
+            if i <= 0:
+                continue
+            if memory_id is not None and i == memory_id:
+                continue
+            result.add(i)
+        except (ValueError, TypeError):
+            continue
+    return sorted(result)
+
+
+def set_memory_tags(memory_id: int, tags: list[str]) -> None:
+    DB.execute("DELETE FROM memory_tags WHERE memory_id = ?", (memory_id,))
+    for tag in tags:
+        DB.execute(
+            "INSERT OR IGNORE INTO memory_tags (memory_id, tag) VALUES (?, ?)",
+            (memory_id, tag),
+        )
+
+
+def get_memory_tags(memory_id: int) -> list[str]:
+    rows = DB.execute(
+        "SELECT tag FROM memory_tags WHERE memory_id = ? ORDER BY tag",
+        (memory_id,),
+    ).fetchall()
+    return [r["tag"] for r in rows]
+
+
+def set_memory_relations(memory_id: int, related_ids: list[int]) -> None:
+    DB.execute("DELETE FROM memory_relations WHERE memory_id = ? OR related_memory_id = ?", (memory_id, memory_id))
+    for rid in related_ids:
+        # Guardar relación en ambas direcciones para consultas simples.
+        DB.execute(
+            "INSERT OR IGNORE INTO memory_relations (memory_id, related_memory_id) VALUES (?, ?)",
+            (memory_id, rid),
+        )
+        DB.execute(
+            "INSERT OR IGNORE INTO memory_relations (memory_id, related_memory_id) VALUES (?, ?)",
+            (rid, memory_id),
+        )
+
+
+def get_memory_relations(memory_id: int) -> list[int]:
+    rows = DB.execute(
+        "SELECT related_memory_id FROM memory_relations WHERE memory_id = ? ORDER BY related_memory_id",
+        (memory_id,),
+    ).fetchall()
+    return sorted({r["related_memory_id"] for r in rows})
 
 
 _PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
@@ -194,8 +297,8 @@ def strip_private_sections(content: str) -> str:
     return _PRIVATE_TAG_RE.sub("", content)
 
 
-def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    return {
+def row_to_dict(row: sqlite3.Row, include_extras: bool = True) -> dict[str, Any]:
+    d = {
         "id": row["id"],
         "content": row["content"],
         "category": row["category"],
@@ -203,9 +306,19 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+    if include_extras:
+        d["tags"] = get_memory_tags(row["id"])
+        d["related_ids"] = get_memory_relations(row["id"])
+    return d
 
 
-def add_memory(content: str, category: str | None = None, project: str | None = None) -> dict[str, Any]:
+def add_memory(
+    content: str,
+    category: str | None = None,
+    project: str | None = None,
+    tags: Any = None,
+    related_ids: Any = None,
+) -> dict[str, Any]:
     if not content or not str(content).strip():
         raise ValueError("content no puede estar vacío")
     cleaned = strip_private_sections(content).strip()
@@ -213,13 +326,18 @@ def add_memory(content: str, category: str | None = None, project: str | None = 
         return {"id": None, "added": False, "reason": "El contenido quedó vacío tras eliminar secciones <private>."}
     cat = normalize_category(category)
     proj = str(project).strip() if project else None
+    normalized_tags = normalize_tags(tags)
+    normalized_related = normalize_related_ids(related_ids)
     now = int(time.time())
     cur = DB.execute(
         "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (cleaned, cat, proj, now, now),
     )
+    memory_id = cur.lastrowid
+    set_memory_tags(memory_id, normalized_tags)
+    set_memory_relations(memory_id, normalized_related)
     DB.commit()
-    return {"id": cur.lastrowid, "added": True}
+    return {"id": memory_id, "added": True}
 
 
 def search_memories(
@@ -229,9 +347,11 @@ def search_memories(
     since: Any = None,
     before: Any = None,
     after: Any = None,
+    tags: Any = None,
 ) -> list[dict[str, Any]]:
+    normalized_tags = normalize_tags(tags)
     if not query or not str(query).strip():
-        return recent_memories(limit=limit)
+        return recent_memories(limit=limit, tags=normalized_tags)
     q = str(query).strip()
     limit = max(1, min(int(limit), 100))
 
@@ -259,6 +379,16 @@ def search_memories(
     if before_ts is not None:
         sql += " AND m.created_at <= ?"
         params.append(before_ts)
+    if normalized_tags:
+        placeholders = ",".join("?" * len(normalized_tags))
+        sql += f""" AND m.id IN (
+            SELECT memory_id FROM memory_tags
+            WHERE tag IN ({placeholders})
+            GROUP BY memory_id
+            HAVING COUNT(DISTINCT tag) = ?
+        )"""
+        params.extend(normalized_tags)
+        params.append(len(normalized_tags))
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     rows = DB.execute(sql, params).fetchall()
@@ -276,12 +406,26 @@ def get_memories(ids: list[int]) -> list[dict[str, Any]]:
     return [row_to_dict(row) for row in rows]
 
 
-def recent_memories(limit: int = 10) -> list[dict[str, Any]]:
+def recent_memories(limit: int = 10, tags: list[str] | None = None) -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 100))
-    rows = DB.execute(
-        "SELECT * FROM memories ORDER BY created_at DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+    normalized_tags = normalize_tags(tags)
+    if normalized_tags:
+        placeholders = ",".join("?" * len(normalized_tags))
+        sql = f"""
+            SELECT m.* FROM memories m
+            WHERE m.id IN (
+                SELECT memory_id FROM memory_tags
+                WHERE tag IN ({placeholders})
+                GROUP BY memory_id
+                HAVING COUNT(DISTINCT tag) = ?
+            )
+            ORDER BY m.created_at DESC LIMIT ?
+        """
+        params = [*normalized_tags, len(normalized_tags), limit]
+    else:
+        sql = "SELECT * FROM memories ORDER BY created_at DESC LIMIT ?"
+        params = (limit,)
+    rows = DB.execute(sql, params).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
@@ -293,6 +437,41 @@ def timeline_memory(memory_id: int, window: int = 3) -> list[dict[str, Any]]:
         (mid - window, mid + window),
     ).fetchall()
     return [row_to_dict(row) for row in rows]
+
+
+def update_memory(
+    memory_id: int,
+    content: str | None = None,
+    category: str | None = None,
+    project: str | None = None,
+    tags: Any = None,
+    related_ids: Any = None,
+) -> dict[str, Any]:
+    memory_id = int(memory_id)
+    row = DB.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+    if not row:
+        return {"updated": False, "id": memory_id, "reason": "Recuerdo no encontrado."}
+
+    new_content = content if content is not None else row["content"]
+    cleaned = strip_private_sections(new_content).strip()
+    if not cleaned:
+        return {"updated": False, "id": memory_id, "reason": "El contenido quedó vacío tras eliminar secciones <private>."}
+
+    new_category = normalize_category(category) if category is not None else row["category"]
+    new_project = str(project).strip() if project is not None else row["project"]
+    now = int(time.time())
+
+    DB.execute(
+        "UPDATE memories SET content = ?, category = ?, project = ?, updated_at = ? WHERE id = ?",
+        (cleaned, new_category, new_project, now, memory_id),
+    )
+
+    normalized_tags = normalize_tags(tags)
+    normalized_related = normalize_related_ids(related_ids, memory_id=memory_id)
+    set_memory_tags(memory_id, normalized_tags)
+    set_memory_relations(memory_id, normalized_related)
+    DB.commit()
+    return {"updated": True, "id": memory_id}
 
 
 def delete_memory(memory_id: int) -> dict[str, Any]:
@@ -360,10 +539,13 @@ def import_memories(data: Any, mode: str = "merge") -> dict[str, Any]:
         proj = str(item.get("project")).strip() if item.get("project") else None
         created = int(item.get("created_at", now))
         updated = int(item.get("updated_at", created))
-        DB.execute(
+        cur = DB.execute(
             "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             (cleaned, cat, proj, created, updated),
         )
+        memory_id = cur.lastrowid
+        set_memory_tags(memory_id, normalize_tags(item.get("tags")))
+        set_memory_relations(memory_id, normalize_related_ids(item.get("related_ids"), memory_id=memory_id))
         imported += 1
     DB.commit()
     return {"imported": imported}
@@ -404,8 +586,57 @@ TOOLS = [
                     "type": "string",
                     "description": "Nombre del proyecto al que pertenece (opcional).",
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Lista de tags para clasificar el recuerdo (opcional).",
+                },
+                "related_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "IDs de recuerdos relacionados (opcional).",
+                },
             },
             "required": ["content"],
+        },
+    },
+    {
+        "name": "memory_update",
+        "description": (
+            "Actualiza un recuerdo existente, incluyendo su contenido, categoría, "
+            "proyecto, tags y relaciones."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "description": "ID del recuerdo a actualizar.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Nuevo contenido del recuerdo.",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Nueva categoría.",
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Nuevo proyecto.",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Lista completa de tags (reemplaza los existentes).",
+                },
+                "related_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Lista completa de IDs relacionados (reemplaza los existentes).",
+                },
+            },
+            "required": ["id"],
         },
     },
     {
@@ -441,6 +672,11 @@ TOOLS = [
                 "after": {
                     "type": "string",
                     "description": "Fecha mínima: ISO 8601 o relativa. Igual que 'since'.",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filtrar por tags (todos deben estar presentes).",
                 },
             },
             "required": ["query"],
@@ -642,6 +878,8 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
             content=args["content"],
             category=args.get("category"),
             project=args.get("project"),
+            tags=args.get("tags"),
+            related_ids=args.get("related_ids"),
         )
     if name == "memory_search":
         return search_memories(
@@ -651,6 +889,7 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
             since=args.get("since"),
             before=args.get("before"),
             after=args.get("after"),
+            tags=args.get("tags"),
         )
     if name == "memory_get":
         return get_memories(args["ids"])
@@ -658,6 +897,15 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
         return recent_memories(limit=args.get("limit", 10))
     if name == "memory_timeline":
         return timeline_memory(memory_id=args["id"], window=args.get("window", 3))
+    if name == "memory_update":
+        return update_memory(
+            memory_id=args["id"],
+            content=args.get("content"),
+            category=args.get("category"),
+            project=args.get("project"),
+            tags=args.get("tags"),
+            related_ids=args.get("related_ids"),
+        )
     if name == "memory_delete":
         return delete_memory(args["id"])
     if name == "memory_export":

@@ -137,6 +137,16 @@ HTML_PAGE = """<!doctype html>
             <input id="project" type="text" placeholder="mi-api" />
           </div>
         </div>
+        <div class="row">
+          <div>
+            <label for="tags">Tags (separados por coma)</label>
+            <input id="tags" type="text" placeholder="jwt, auth, api..." />
+          </div>
+          <div>
+            <label for="related_ids">IDs relacionados (separados por coma)</label>
+            <input id="related_ids" type="text" placeholder="12, 34" />
+          </div>
+        </div>
         <div class="actions">
           <button type="submit" id="save-btn">Guardar</button>
           <button type="button" class="secondary" id="cancel-btn" style="display:none">Cancelar</button>
@@ -149,6 +159,7 @@ HTML_PAGE = """<!doctype html>
         <input id="search" type="text" placeholder="Buscar..." />
         <input id="filter-project" type="text" placeholder="Proyecto" />
         <input id="filter-category" type="text" placeholder="Categoría" />
+        <input id="filter-tags" type="text" placeholder="Tags (comma)" />
         <button id="btn-search">Buscar</button>
         <button class="secondary" id="btn-export">Exportar JSON</button>
       </div>
@@ -169,9 +180,11 @@ HTML_PAGE = """<!doctype html>
       const q = $('search').value.trim();
       const project = $('filter-project').value.trim();
       const category = $('filter-category').value.trim();
+      const tags = $('filter-tags').value.trim();
       if (q) params.set('q', q);
       if (project) params.set('project', project);
       if (category) params.set('category', category);
+      if (tags) params.set('tags', tags);
       params.set('limit', '100');
 
       const res = await fetch('/api/memories?' + params.toString());
@@ -190,6 +203,8 @@ HTML_PAGE = """<!doctype html>
           <td>
             <div>${escapeHtml(m.content)}</div>
             <div class="meta">${fmtDate(m.created_at)} · ID ${m.id}</div>
+            ${(m.tags && m.tags.length) ? '<div class="meta">🏷️ ' + m.tags.map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('') + '</div>' : ''}
+            ${(m.related_ids && m.related_ids.length) ? '<div class="meta">🔗 Relacionados: ' + m.related_ids.map(id => `<a href="#" onclick="editMemory(${id}); return false;">#${id}</a>`).join(', ') + '</div>' : ''}
           </td>
           <td><span class="badge">${escapeHtml(m.category || 'note')}</span></td>
           <td>${escapeHtml(m.project || '—')}</td>
@@ -208,6 +223,10 @@ HTML_PAGE = """<!doctype html>
       return div.innerHTML;
     }
 
+    function parseCommaList(value) {
+      return value.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
     $('memory-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = $('memory-id').value;
@@ -215,6 +234,8 @@ HTML_PAGE = """<!doctype html>
         content: $('content').value,
         category: $('category').value,
         project: $('project').value,
+        tags: parseCommaList($('tags').value),
+        related_ids: parseCommaList($('related_ids').value).map(Number).filter(n => n > 0),
       };
       const url = id ? `/api/memories/${id}` : '/api/memories';
       const method = id ? 'PUT' : 'POST';
@@ -242,6 +263,8 @@ HTML_PAGE = """<!doctype html>
       $('content').value = m.content;
       $('category').value = m.category || '';
       $('project').value = m.project || '';
+      $('tags').value = (m.tags || []).join(', ');
+      $('related_ids').value = (m.related_ids || []).join(', ');
       $('form-title').textContent = 'Editar recuerdo #' + m.id;
       $('save-btn').textContent = 'Actualizar';
       $('cancel-btn').style.display = '';
@@ -264,6 +287,8 @@ HTML_PAGE = """<!doctype html>
       $('content').value = '';
       $('category').value = '';
       $('project').value = '';
+      $('tags').value = '';
+      $('related_ids').value = '';
       $('form-title').textContent = 'Nuevo recuerdo';
       $('save-btn').textContent = 'Guardar';
       $('cancel-btn').style.display = 'none';
@@ -347,12 +372,15 @@ class Handler(BaseHTTPRequestHandler):
                 q = qs.get("q", [""])[0]
                 project = qs.get("project", [None])[0]
                 category = qs.get("category", [None])[0]
+                tags_raw = qs.get("tags", [""])[0]
+                tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
                 limit = int(qs.get("limit", ["100"])[0])
                 try:
                     result = memory_mcp.search_memories(
                         query=q,
                         limit=limit,
                         project=project,
+                        tags=tags or None,
                     )
                     if category:
                         result = [m for m in result if (m.get("category") or "") == category]
@@ -390,6 +418,8 @@ class Handler(BaseHTTPRequestHandler):
                 content=body.get("content", ""),
                 category=body.get("category"),
                 project=body.get("project"),
+                tags=body.get("tags"),
+                related_ids=body.get("related_ids"),
             )
         except Exception as e:
             self._json_response({"error": str(e)}, 400)
@@ -408,23 +438,19 @@ class Handler(BaseHTTPRequestHandler):
             self._json_response({"error": "Invalid id"}, 400)
             return
         body = self._read_body()
-        now = int(__import__("time").time())
         try:
-            memory_mcp.DB.execute(
-                "UPDATE memories SET content = ?, category = ?, project = ?, updated_at = ? WHERE id = ?",
-                (
-                    body.get("content", "").strip(),
-                    memory_mcp.normalize_category(body.get("category")),
-                    str(body.get("project")).strip() if body.get("project") else None,
-                    now,
-                    memory_id,
-                ),
+            result = memory_mcp.update_memory(
+                memory_id=memory_id,
+                content=body.get("content"),
+                category=body.get("category"),
+                project=body.get("project"),
+                tags=body.get("tags"),
+                related_ids=body.get("related_ids"),
             )
-            memory_mcp.DB.commit()
         except Exception as e:
             self._json_response({"error": str(e)}, 400)
             return
-        self._json_response({"updated": True, "id": memory_id})
+        self._json_response(result)
 
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)

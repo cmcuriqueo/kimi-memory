@@ -5,6 +5,15 @@ Todos los cambios notables se documentan en este archivo.
 ## [Unreleased]
 
 ### Added
+- Tags múltiples y relaciones entre recuerdos:
+  - Nuevas tablas `memory_tags` y `memory_relations`.
+  - `memory_add` acepta `tags` y `related_ids`.
+  - Nueva herramienta `memory_update` para editar recuerdos.
+  - `memory_search` soporta filtrar por tags (AND).
+  - `memory_get`, `memory_recent` y `memory_timeline` devuelven `tags` y `related_ids`.
+  - `memory_import` preserva tags y relaciones.
+  - Web Viewer permite ver, filtrar, agregar y editar tags y recuerdos relacionados.
+  - Hooks automáticos ahora taggean recuerdos según su tipo y contenido.
 - Soporte para tags `<private>...</private>` en `memory_add`: el contenido marcado como privado se elimina antes de guardar, evitando que datos sensibles persistan.
 - Progressive disclosure en `SKILL.md`: flujo recomendado `memory_search` → `memory_timeline` → `memory_get` para ahorrar tokens.
 - Filtros por fecha en `memory_search`: soporta `since`/`after` y `before` en formato ISO 8601 o relativo (`7d`, `1h`, `30m`, `2w`, `3mo`, `1y`).

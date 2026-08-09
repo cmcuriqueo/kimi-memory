@@ -76,6 +76,7 @@ y enviá por stdin:
 | `memory_recent` | Devuelve los recuerdos más recientes. |
 | `memory_timeline` | Muestra recuerdos cercanos a un ID. |
 | `memory_delete` | Elimina un recuerdo por ID. |
+| `memory_update` | Actualiza contenido, categoría, proyecto, tags y relaciones. |
 | `memory_export` | Exporta recuerdos a JSON. |
 | `memory_import` | Importa recuerdos desde JSON. |
 
@@ -122,9 +123,9 @@ Variables de entorno:
 
 Endpoints:
 - `GET /` — interfaz web.
-- `GET /api/memories?q=...&project=...&category=...` — buscar recuerdos.
-- `POST /api/memories` — crear recuerdo.
-- `PUT /api/memories/<id>` — editar recuerdo.
+- `GET /api/memories?q=...&project=...&category=...&tags=...` — buscar recuerdos.
+- `POST /api/memories` — crear recuerdo (con `tags` y `related_ids`).
+- `PUT /api/memories/<id>` — editar recuerdo (con `tags` y `related_ids`).
 - `DELETE /api/memories/<id>` — eliminar recuerdo.
 - `GET /api/export` — descargar JSON.
 

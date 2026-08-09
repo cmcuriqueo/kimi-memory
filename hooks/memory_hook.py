@@ -189,10 +189,18 @@ def handle_session_end(payload: dict[str, Any]) -> None:
         content = summarize_session(session_id, cwd, reason, prompts, tools)
 
     project = derive_project(cwd)
+    tags = ["session-summary"]
+    # Extraer keywords de los prompts para taggear el resumen.
+    for p in prompts:
+        for tag in _extract_tags_from_prompt(p):
+            if tag not in tags:
+                tags.append(tag)
+
     result = memory_mcp.add_memory(
         content=content,
         category="session_summary",
         project=project,
+        tags=tags,
     )
     print(f"[kimi-memory-hook] SessionEnd guardado: {result}", file=sys.stderr)
 
@@ -212,11 +220,19 @@ def handle_post_tool_use(payload: dict[str, Any]) -> None:
         return
 
     project = derive_project(cwd)
+    path_obj = Path(file_path)
+    tags = ["file-change"]
+    if path_obj.suffix:
+        tags.append(path_obj.suffix.lstrip(".").lower())
+    if path_obj.name:
+        tags.append(path_obj.name.lower())
+
     content = f"Archivo modificado durante la sesión: {file_path}"
     result = memory_mcp.add_memory(
         content=content,
         category="file_change",
         project=project,
+        tags=tags,
     )
     print(f"[kimi-memory-hook] PostToolUse guardado: {result}", file=sys.stderr)
 
@@ -242,6 +258,30 @@ def _is_interesting_prompt(prompt: str) -> bool:
     return any(k in lower for k in _PROMPT_KEYWORDS)
 
 
+def _extract_tags_from_prompt(prompt: str) -> list[str]:
+    tags = ["prompt"]
+    lower = prompt.lower()
+    keyword_tags = {
+        "bug": "bug",
+        "error": "error",
+        "falla": "error",
+        "fallo": "error",
+        "autenticación": "auth",
+        "autenticacion": "auth",
+        "jwt": "jwt",
+        "api": "api",
+        "refactor": "refactor",
+        "arquitectura": "architecture",
+        "diseño": "design",
+        "decisión": "decision",
+        "decision": "decision",
+    }
+    for keyword, tag in keyword_tags.items():
+        if keyword in lower and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
 def handle_user_prompt_submit(payload: dict[str, Any]) -> None:
     prompt = payload.get("prompt", "")
     if not prompt or not _is_interesting_prompt(prompt):
@@ -255,6 +295,7 @@ def handle_user_prompt_submit(payload: dict[str, Any]) -> None:
         content=content,
         category="prompt",
         project=project,
+        tags=_extract_tags_from_prompt(prompt),
     )
     print(f"[kimi-memory-hook] UserPromptSubmit guardado: {result}", file=sys.stderr)
 
@@ -275,6 +316,7 @@ def handle_pre_compact(payload: dict[str, Any]) -> None:
         content=content,
         category="compaction_context",
         project=project,
+        tags=["compaction"],
     )
     print(f"[kimi-memory-hook] PreCompact guardado: {result}", file=sys.stderr)
 
@@ -294,6 +336,7 @@ def handle_stop_failure(payload: dict[str, Any]) -> None:
         content=content,
         category="bugfix",
         project=project,
+        tags=["bugfix", "error", error_type.lower()],
     )
     print(f"[kimi-memory-hook] StopFailure guardado: {result}", file=sys.stderr)
 

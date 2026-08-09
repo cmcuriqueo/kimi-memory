@@ -71,6 +71,59 @@ def main():
         }, req_id=5)
         print(r["result"]["content"][0]["text"])
 
+        print("\n6) memory_add con tags y relaciones")
+        r = send(proc.stdin, proc.stdout, "tools/call", {
+            "name": "memory_add",
+            "arguments": {
+                "content": "Decidimos usar JWT con RS256 para autenticación.",
+                "category": "decision",
+                "project": "kimi-memory",
+                "tags": ["auth", "jwt"],
+            },
+        }, req_id=6)
+        print(r["result"]["content"][0]["text"])
+        decision_id = json.loads(r["result"]["content"][0]["text"])["id"]
+
+        print("\n7) memory_add relacionado")
+        r = send(proc.stdin, proc.stdout, "tools/call", {
+            "name": "memory_add",
+            "arguments": {
+                "content": "Implementar middleware de validación de tokens.",
+                "category": "todo",
+                "project": "kimi-memory",
+                "tags": ["auth", "jwt"],
+                "related_ids": [decision_id],
+            },
+        }, req_id=7)
+        print(r["result"]["content"][0]["text"])
+        todo_id = json.loads(r["result"]["content"][0]["text"])["id"]
+
+        print("\n8) memory_search filtrando por tag")
+        r = send(proc.stdin, proc.stdout, "tools/call", {
+            "name": "memory_search",
+            "arguments": {"query": "JWT", "tags": ["auth"], "limit": 5},
+        }, req_id=8)
+        print(r["result"]["content"][0]["text"])
+
+        print("\n9) memory_update")
+        r = send(proc.stdin, proc.stdout, "tools/call", {
+            "name": "memory_update",
+            "arguments": {
+                "id": todo_id,
+                "content": "Implementar middleware de validación de tokens (actualizado).",
+                "tags": ["auth", "jwt", "middleware"],
+                "related_ids": [decision_id],
+            },
+        }, req_id=9)
+        print(r["result"]["content"][0]["text"])
+
+        print("\n10) memory_get verificando tags y relaciones")
+        r = send(proc.stdin, proc.stdout, "tools/call", {
+            "name": "memory_get",
+            "arguments": {"ids": [decision_id, todo_id]},
+        }, req_id=10)
+        print(r["result"]["content"][0]["text"])
+
         print("\n[OK] Todas las pruebas pasaron.")
     finally:
         proc.stdin.close()

@@ -83,6 +83,32 @@ Si el usuario activó los hooks de Kimi Memory, vas a encontrar recuerdos autom�
 
 Revisalos con `memory_recent` o `memory_search` al retomar un proyecto.
 
+## Tags y relaciones
+
+Usá `tags` para clasificar un recuerdo con múltiples etiquetas. Son más flexibles que la `category`:
+
+```
+memory_add(
+  content="Usamos JWT con RS256 para autenticación.",
+  category="decision",
+  project="mi-api",
+  tags=["auth", "jwt", "security"],
+  related_ids=[12, 15]
+)
+```
+
+Buscá por tags combinados:
+
+```
+memory_search(query="autenticación", tags=["auth", "jwt"], project="mi-api")
+```
+
+Esto devuelve solo recuerdos que tengan **ambos** tags.
+
+### Relaciones
+
+`related_ids` vincula recuerdos entre sí. Son bidireccionales: si vinculás A con B, al leer B también vas a ver A. Usalas para conectar decisiones, tareas, bugfixes y prompts de una misma línea de trabajo.
+
 ## Ubicación de los datos
 
 La base de datos SQLite se guarda en `~/.kimi-code/memory.db`. Podés cambiarla con la variable de entorno `KIMI_MEMORY_DB`.
