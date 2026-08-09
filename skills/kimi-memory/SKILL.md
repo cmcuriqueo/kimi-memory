@@ -71,6 +71,10 @@ Podés usar cualquier categoría que tenga sentido para tu flujo. Estas son las 
 
 También podés crear categorías propias, por ejemplo: `security`, `refactor`, `deployment`, `meeting`, etc.
 
+## Auto-guardado de sesiones
+
+Si el usuario activó el hook `SessionEnd`, vas a encontrar resúmenes automáticos de sesiones con categoría `session_summary`. Revisalos con `memory_recent` o `memory_search` al retomar un proyecto.
+
 ## Ubicación de los datos
 
 La base de datos SQLite se guarda en `~/.kimi-code/memory.db`. Podés cambiarla con la variable de entorno `KIMI_MEMORY_DB`.

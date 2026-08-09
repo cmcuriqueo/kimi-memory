@@ -9,7 +9,7 @@ Backlog inspirado en la comparación con `claude-mem` y las necesidades propias 
 3. [x] **Filtros por fecha en `memory_search`** — Soportar `since`, `before` y `after` en las búsquedas.
 4. [x] **Exportar / importar memoria a JSON** — Backup y restauración portable de la memoria.
 5. [x] **Categorías personalizables** — Permitir categorías definidas por el usuario, no solo las 7 fijas.
-6. [ ] **Hooks de sesión para auto-guardar contexto** — Aprovechar los hooks de Kimi CLI para resumir y guardar automáticamente al finalizar una sesión.
+6. [x] **Hooks de sesión para auto-guardar contexto** — Aprovechar los hooks de Kimi CLI para resumir y guardar automáticamente al finalizar una sesión.
 7. [ ] **Web Viewer UI básico** — Servidor HTTP local opcional para ver y buscar recuerdos desde el navegador.
 
 ## ✅ Hecho

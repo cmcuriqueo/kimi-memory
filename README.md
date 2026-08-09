@@ -101,6 +101,28 @@ Podés cambiar la ubicación de la base de datos con la variable de entorno `KIM
 export KIMI_MEMORY_DB=/ruta/a/tu/memory.db
 ```
 
+## 🪝 Hooks (auto-guardar contexto de sesión)
+
+Kimi Code CLI puede ejecutar hooks en eventos del ciclo de vida. Kimi Memory incluye un hook `SessionEnd` que resume automáticamente cada sesión y lo guarda como un recuerdo con categoría `session_summary`.
+
+Para activarlo, agregá esto a `~/.kimi/config.toml`:
+
+```toml
+[[hooks]]
+event = "SessionEnd"
+command = "python ~/.kimi-code/plugins/kimi-memory/hooks/session_end.py"
+```
+
+En Windows:
+
+```toml
+[[hooks]]
+event = "SessionEnd"
+command = "python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\session_end.py"
+```
+
+> ⚠️ El hook requiere que el plugin esté instalado (ver `install.sh` / `install.ps1`).
+
 ## 🗺️ Roadmap
 
 Ver [`TODO.md`](./TODO.md) para la lista completa de mejoras planificadas.

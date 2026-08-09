@@ -38,6 +38,13 @@ Copy-Item -Path "$RepoDir\memory_mcp.py" -Destination "$PluginDir\memory_mcp.py"
 Copy-Item -Path "$RepoDir\test_mcp.py" -Destination "$PluginDir\test_mcp.py" -Force
 Copy-Item -Path "$RepoDir\kimi.plugin.json" -Destination "$PluginDir\kimi.plugin.json" -Force
 
+# Copiar hooks
+if (Test-Path "$RepoDir\hooks") {
+    Write-Host "Copiando hooks a $PluginDir\hooks..."
+    New-Item -ItemType Directory -Force -Path "$PluginDir\hooks" | Out-Null
+    Copy-Item -Path "$RepoDir\hooks\*" -Destination "$PluginDir\hooks\" -Force -Recurse
+}
+
 # Copiar skill
 Write-Host "Copiando skill a $SkillDir..."
 New-Item -ItemType Directory -Force -Path $SkillDir | Out-Null

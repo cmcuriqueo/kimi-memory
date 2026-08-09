@@ -49,6 +49,13 @@ cp -f "${REPO_DIR}/memory_mcp.py" "${PLUGIN_DIR}/"
 cp -f "${REPO_DIR}/test_mcp.py" "${PLUGIN_DIR}/"
 cp -f "${REPO_DIR}/kimi.plugin.json" "${PLUGIN_DIR}/"
 
+# Copiar hooks
+if [ -d "${REPO_DIR}/hooks" ]; then
+    echo "Copiando hooks a ${PLUGIN_DIR}/hooks..."
+    mkdir -p "${PLUGIN_DIR}/hooks"
+    cp -f "${REPO_DIR}/hooks/"* "${PLUGIN_DIR}/hooks/"
+fi
+
 # Copiar skill
 echo "Copiando skill a ${SKILL_DIR}..."
 mkdir -p "${SKILL_DIR}"
