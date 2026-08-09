@@ -6,6 +6,7 @@ Todos los cambios notables se documentan en este archivo.
 
 ### Added
 - Soporte para tags `<private>...</private>` en `memory_add`: el contenido marcado como privado se elimina antes de guardar, evitando que datos sensibles persistan.
+- Progressive disclosure en `SKILL.md`: flujo recomendado `memory_search` → `memory_timeline` → `memory_get` para ahorrar tokens.
 
 ## [0.1.0] - 2026-08-09
 

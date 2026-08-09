@@ -5,7 +5,7 @@ Backlog inspirado en la comparación con `claude-mem` y las necesidades propias 
 ## 🎯 Próximas 7 mejoras
 
 1. [x] **Tags `<private>` para privacidad** — Eliminar del contenido todo lo que esté entre `<private>...</private>` antes de guardar, para que datos sensibles no persistan.
-2. [ ] **Progressive disclosure en SKILL.md** — Reescribir el skill para que el flujo recomendado sea: `memory_search` (índice ligero) → `memory_timeline` (contexto) → `memory_get` (detalle completo), ahorrando tokens.
+2. [x] **Progressive disclosure en SKILL.md** — Reescribir el skill para que el flujo recomendado sea: `memory_search` (índice ligero) → `memory_timeline` (contexto) → `memory_get` (detalle completo), ahorrando tokens.
 3. [ ] **Filtros por fecha en `memory_search`** — Soportar `since`, `before` y `after` en las búsquedas.
 4. [ ] **Exportar / importar memoria a JSON** — Backup y restauración portable de la memoria.
 5. [ ] **Categorías personalizables** — Permitir categorías definidas por el usuario, no solo las 7 fijas.
