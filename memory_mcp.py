@@ -10,8 +10,10 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +107,8 @@ def init_db(path: Path) -> sqlite3.Connection:
             category TEXT,
             project TEXT,
             created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-            updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+            uuid TEXT UNIQUE
         )
         """
     )
@@ -150,6 +153,14 @@ def init_db(path: Path) -> sqlite3.Connection:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_uuid ON memories(uuid)"
+    )
+    # Migración: agregar columna uuid si no existe (tablas creadas en versiones anteriores).
+    try:
+        conn.execute("ALTER TABLE memories ADD COLUMN uuid TEXT UNIQUE")
+    except sqlite3.OperationalError:
+        pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS memory_tags (
@@ -226,6 +237,25 @@ def normalize_related_ids(related_ids: Any, memory_id: int | None = None) -> lis
         except (ValueError, TypeError):
             continue
     return sorted(result)
+
+
+def generate_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def ensure_uuid(memory_id: int) -> str:
+    """Devuelve el UUID de un recuerdo, generando uno si no existe."""
+    memory_id = int(memory_id)
+    row = get_db().execute("SELECT uuid FROM memories WHERE id = ?", (memory_id,)).fetchone()
+    if not row:
+        raise ValueError(f"Recuerdo no encontrado: {memory_id}")
+    existing = row["uuid"]
+    if existing:
+        return existing
+    new_uuid = generate_uuid()
+    get_db().execute("UPDATE memories SET uuid = ? WHERE id = ?", (new_uuid, memory_id))
+    get_db().commit()
+    return new_uuid
 
 
 def set_memory_tags(memory_id: int, tags: list[str]) -> None:
@@ -335,6 +365,7 @@ def strip_private_sections(content: str) -> str:
 def row_to_dict(row: sqlite3.Row, include_extras: bool = True) -> dict[str, Any]:
     d = {
         "id": row["id"],
+        "uuid": row["uuid"],
         "content": row["content"],
         "category": row["category"],
         "project": row["project"],
@@ -363,15 +394,17 @@ def add_memory(
     proj = str(project).strip() if project else None
     normalized_tags = normalize_tags(tags)
     normalized_related = normalize_related_ids(related_ids)
+    new_uuid = generate_uuid()
     now = int(time.time())
     cur = get_db().execute(
-        "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (cleaned, cat, proj, now, now),
+        "INSERT INTO memories (content, category, project, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?, ?)",
+        (cleaned, cat, proj, now, now, new_uuid),
     )
     memory_id = cur.lastrowid
     set_memory_tags(memory_id, normalized_tags)
     set_memory_relations(memory_id, normalized_related)
     get_db().commit()
+    _maybe_sync()
     return {"id": memory_id, "added": True}
 
 
@@ -398,7 +431,7 @@ def search_memories(
     start_ts = after_ts if after_ts is not None else since_ts
 
     sql = """
-        SELECT m.id, m.content, m.category, m.project, m.created_at,
+        SELECT m.id, m.uuid, m.content, m.category, m.project, m.created_at,
                m.updated_at, rank AS score
         FROM memories_fts f
         JOIN memories m ON m.id = f.rowid
@@ -506,13 +539,272 @@ def update_memory(
     set_memory_tags(memory_id, normalized_tags)
     set_memory_relations(memory_id, normalized_related)
     get_db().commit()
+    _maybe_sync()
     return {"updated": True, "id": memory_id}
 
 
 def delete_memory(memory_id: int) -> dict[str, Any]:
     cur = get_db().execute("DELETE FROM memories WHERE id = ?", (int(memory_id),))
     get_db().commit()
+    _maybe_sync()
     return {"deleted": cur.rowcount > 0, "id": int(memory_id)}
+
+
+# ---------------------------------------------------------------------------
+# Sincronización via Git
+# ---------------------------------------------------------------------------
+def get_git_repo() -> Path | None:
+    """Devuelve el path al repo Git configurado, o None si no hay."""
+    raw = os.environ.get("KIMI_MEMORY_GIT_REPO", "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if not path.is_dir():
+        return None
+    return path
+
+
+def git_run(repo: Path, args: list[str], check: bool = False) -> subprocess.CompletedProcess[str]:
+    cmd = ["git", "-C", str(repo)] + args
+    try:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout=60,
+        )
+    except Exception as e:
+        log(f"Git command failed: {' '.join(cmd)} — {e}")
+        # Devolver un CompletedProcess falso para simplificar el manejo posterior.
+        result = subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr=str(e))
+        return result
+
+
+def _parse_frontmatter_list(value: str) -> list[str]:
+    """Parsea una lista en formato YAML simple: [a, b] o ['a', 'b']."""
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1]
+        if not inner:
+            return []
+        items = []
+        for part in inner.split(","):
+            part = part.strip()
+            if (part.startswith("'") and part.endswith("'")) or (part.startswith('"') and part.endswith('"')):
+                part = part[1:-1]
+            if part:
+                items.append(part)
+        return items
+    return []
+
+
+def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Extrae frontmatter YAML simple y el cuerpo de un archivo Markdown."""
+    meta: dict[str, Any] = {}
+    if not text.startswith("---"):
+        return meta, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return meta, text
+    fm_text = parts[1].strip()
+    body = parts[2].strip()
+    for line in fm_text.splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if value.startswith("["):
+            meta[key] = _parse_frontmatter_list(value)
+        elif value.startswith("'") and value.endswith("'"):
+            meta[key] = value[1:-1]
+        elif value.startswith('"') and value.endswith('"'):
+            meta[key] = value[1:-1]
+        elif value.isdigit():
+            meta[key] = int(value)
+        elif value.lower() in ("true", "false"):
+            meta[key] = value.lower() == "true"
+        else:
+            meta[key] = value
+    return meta, body
+
+
+def _format_frontmatter_list(items: list[Any]) -> str:
+    if not items:
+        return "[]"
+    return "[" + ", ".join(f'"{str(item)}"' for item in items) + "]"
+
+
+def export_to_git(repo: Path) -> dict[str, Any]:
+    """Exporta todos los recuerdos como archivos Markdown en el repo Git."""
+    memories_dir = repo / "memories"
+    memories_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = get_db().execute("SELECT * FROM memories").fetchall()
+    exported_uuids: set[str] = set()
+
+    for row in rows:
+        memory_id = row["id"]
+        muuid = row["uuid"] or ensure_uuid(memory_id)
+        exported_uuids.add(muuid)
+        tags = get_memory_tags(memory_id)
+        related_ids = get_memory_relations(memory_id)
+        related_uuids = []
+        for rid in related_ids:
+            rrow = get_db().execute("SELECT uuid FROM memories WHERE id = ?", (rid,)).fetchone()
+            if rrow and rrow["uuid"]:
+                related_uuids.append(rrow["uuid"])
+
+        frontmatter = {
+            "uuid": muuid,
+            "category": row["category"] or "",
+            "project": row["project"] or "",
+            "tags": tags,
+            "related_uuids": related_uuids,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+        fm_lines = ["---"]
+        for key, value in frontmatter.items():
+            if isinstance(value, list):
+                fm_lines.append(f"{key}: {_format_frontmatter_list(value)}")
+            elif isinstance(value, str):
+                fm_lines.append(f'{key}: "{value}"')
+            else:
+                fm_lines.append(f"{key}: {value}")
+        fm_lines.append("---")
+
+        content = "\n".join(fm_lines) + "\n\n" + (row["content"] or "")
+        (memories_dir / f"{muuid}.md").write_text(content, encoding="utf-8")
+
+    # Borrar archivos de recuerdos que ya no existen localmente.
+    for f in memories_dir.glob("*.md"):
+        if f.stem not in exported_uuids:
+            f.unlink()
+
+    return {"exported": len(rows)}
+
+
+def import_from_git(repo: Path) -> dict[str, Any]:
+    """Importa recuerdos desde archivos Markdown en el repo Git."""
+    memories_dir = repo / "memories"
+    if not memories_dir.exists():
+        return {"imported": 0}
+
+    files = sorted(memories_dir.glob("*.md"))
+    imported = 0
+    uuid_to_id: dict[str, int] = {}
+
+    # Primera pasada: importar/actualizar recuerdos.
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        meta, body = _parse_frontmatter(text)
+        muuid = meta.get("uuid")
+        if not muuid:
+            continue
+        content = body.strip()
+        if not content:
+            continue
+        cleaned = strip_private_sections(content).strip()
+        if not cleaned:
+            continue
+
+        cat = normalize_category(meta.get("category"))
+        proj = str(meta.get("project")).strip() if meta.get("project") else None
+        tags = [t.lower().strip() for t in meta.get("tags", []) if t]
+        created = int(meta.get("created_at", 0)) or int(time.time())
+        updated = int(meta.get("updated_at", 0)) or created
+
+        existing = get_db().execute("SELECT id, updated_at FROM memories WHERE uuid = ?", (muuid,)).fetchone()
+        if existing:
+            if updated > existing["updated_at"]:
+                get_db().execute(
+                    "UPDATE memories SET content = ?, category = ?, project = ?, created_at = ?, updated_at = ? WHERE uuid = ?",
+                    (cleaned, cat, proj, created, updated, muuid),
+                )
+                memory_id = existing["id"]
+            else:
+                memory_id = existing["id"]
+        else:
+            cur = get_db().execute(
+                "INSERT INTO memories (content, category, project, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?, ?)",
+                (cleaned, cat, proj, created, updated, muuid),
+            )
+            memory_id = cur.lastrowid
+
+        uuid_to_id[muuid] = memory_id
+        set_memory_tags(memory_id, tags)
+        imported += 1
+
+    # Segunda pasada: establecer relaciones por UUID.
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        meta, _ = _parse_frontmatter(text)
+        muuid = meta.get("uuid")
+        if not muuid or muuid not in uuid_to_id:
+            continue
+        memory_id = uuid_to_id[muuid]
+        related_uuids = [u for u in meta.get("related_uuids", []) if u in uuid_to_id]
+        related_ids = [uuid_to_id[u] for u in related_uuids]
+        set_memory_relations(memory_id, related_ids)
+
+    get_db().commit()
+    return {"imported": imported}
+
+
+def _maybe_sync() -> None:
+    """Sincroniza cambios locales con Git si está configurado. No bloquea."""
+    repo = get_git_repo()
+    if repo:
+        try:
+            sync_git(repo, full=False)
+        except Exception as e:
+            log(f"Sync automático falló: {e}")
+
+
+def sync_git(repo: Path | None = None, full: bool = False) -> dict[str, Any]:
+    """Sincroniza la memoria con un repo Git.
+
+    full=True hace pull, import, export, commit y push.
+    full=False solo exporta y commitea los cambios locales.
+    """
+    repo = repo or get_git_repo()
+    if not repo:
+        return {"synced": False, "reason": "KIMI_MEMORY_GIT_REPO no configurado."}
+
+    if not (repo / ".git").is_dir():
+        return {"synced": False, "reason": f"{repo} no es un repo Git."}
+
+    result: dict[str, Any] = {"repo": str(repo), "full": full}
+
+    if full:
+        pull = git_run(repo, ["pull", "--rebase", "--autostash"])
+        result["pull"] = {"ok": pull.returncode == 0, "stderr": pull.stderr.strip()}
+        if pull.returncode == 0:
+            imported = import_from_git(repo)
+            result["import"] = imported
+
+    exported = export_to_git(repo)
+    result["export"] = exported
+
+    status = git_run(repo, ["status", "--porcelain"])
+    if status.stdout.strip():
+        git_run(repo, ["add", "."])
+        timestamp = datetime.datetime.now().isoformat()
+        commit = git_run(repo, ["commit", "-m", f"kimi-memory sync {timestamp}"])
+        result["commit"] = {"ok": commit.returncode == 0, "stderr": commit.stderr.strip()}
+
+        if full:
+            push = git_run(repo, ["push"])
+            result["push"] = {"ok": push.returncode == 0, "stderr": push.stderr.strip()}
+    else:
+        result["commit"] = {"ok": True, "stderr": "Sin cambios para commitear."}
+
+    result["synced"] = True
+    return result
 
 
 def export_memories(project: str | None = None, path: str | None = None) -> dict[str, Any]:
@@ -840,6 +1132,18 @@ TOOLS = [
         },
     },
     {
+        "name": "memory_sync",
+        "description": (
+            "Sincroniza la memoria con el repositorio Git configurado en "
+            "KIMI_MEMORY_GIT_REPO. Hace pull, importa cambios remotos, exporta "
+            "los recuerdos locales como archivos Markdown, commitea y hace push."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "memory_import",
         "description": (
             "Importa recuerdos desde una lista JSON o desde un archivo JSON. "
@@ -984,12 +1288,21 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
             data=args["data"],
             mode=args.get("mode", "merge"),
         )
+    if name == "memory_sync":
+        return sync_git(full=True)
     raise ValueError(f"Herramienta desconocida: {name}")
 
 
 def main() -> None:
     try:
         log(f"Iniciando. DB: {get_db_path()}")
+        repo = get_git_repo()
+        if repo:
+            log(f"Sincronizando con Git: {repo}")
+            try:
+                sync_git(repo, full=True)
+            except Exception as e:
+                log(f"Sync inicial falló: {e}")
         for line in sys.stdin:
             line = line.strip()
             if not line:

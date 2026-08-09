@@ -103,6 +103,27 @@ kimi-memory/
 └── README.md
 ```
 
+## 🔄 Sincronización via Git
+
+Podés sincronizar tu memoria entre dispositivos usando un repositorio Git. Cada recuerdo se exporta como un archivo Markdown con frontmatter YAML en el repo.
+
+```bash
+# Crear o clonar un repo Git
+export KIMI_MEMORY_GIT_REPO=/ruta/a/tu/repo-de-memoria
+```
+
+Cuando `KIMI_MEMORY_GIT_REPO` está configurado:
+
+- Al iniciar el servidor MCP se hace `pull → import → export → commit → push`.
+- Cada `memory_add`/`memory_update`/`memory_delete` exporta y commitea automáticamente.
+- La herramienta `memory_sync` permite sincronizar manualmente.
+
+Requisitos:
+
+- Git instalado y en PATH.
+- `user.name` y `user.email` configurados.
+- El repo debe tener un remote configurado para push/pull (SSH o HTTPS con credenciales).
+
 ## ⚙️ Configuración
 
 Podés cambiar la ubicación de la base de datos con la variable de entorno `KIMI_MEMORY_DB`:

@@ -23,6 +23,7 @@ Backlog inspirado en la comparación con `claude-mem` y las necesidades propias 
 - [x] Tags múltiples y relaciones entre recuerdos.
 - [x] Tests unitarios con pytest y CI/CD.
 - [x] Web Viewer con grafo y Markdown.
+- [x] Sincronización entre dispositivos via Git.
 
 ## 🧊 Heladera (ideas futuras)
 

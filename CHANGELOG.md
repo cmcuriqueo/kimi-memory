@@ -19,6 +19,11 @@ Todos los cambios notables se documentan en este archivo.
 - Filtros por fecha en `memory_search`: soporta `since`/`after` y `before` en formato ISO 8601 o relativo (`7d`, `1h`, `30m`, `2w`, `3mo`, `1y`).
 - `memory_export` e `memory_import`: backup y restauración de la memoria a/desde JSON.
 - Categorías personalizables: el usuario puede usar cualquier categoría, no solo las 7 predefinidas.
+- Sincronización via Git:
+  - Nuevo campo `uuid` en recuerdos.
+  - `export_to_git`/`import_from_git` con archivos Markdown + frontmatter YAML.
+  - `sync_git` y herramienta MCP `memory_sync`.
+  - Sync automático al iniciar y tras cada modificación.
 - Web Viewer mejorado:
   - Renderizado Markdown en el contenido de los recuerdos.
   - Vista de grafo interactiva (`/api/graph`) para explorar relaciones.
