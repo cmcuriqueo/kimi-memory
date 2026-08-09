@@ -198,6 +198,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "category": row["category"],
         "project": row["project"],
         "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
     }
 
 
@@ -295,6 +296,74 @@ def delete_memory(memory_id: int) -> dict[str, Any]:
     cur = DB.execute("DELETE FROM memories WHERE id = ?", (int(memory_id),))
     DB.commit()
     return {"deleted": cur.rowcount > 0, "id": int(memory_id)}
+
+
+def export_memories(project: str | None = None, path: str | None = None) -> dict[str, Any]:
+    sql = "SELECT * FROM memories"
+    params: list[Any] = []
+    if project:
+        sql += " WHERE project = ?"
+        params.append(project)
+    sql += " ORDER BY created_at DESC"
+    rows = DB.execute(sql, params).fetchall()
+    data = [row_to_dict(row) for row in rows]
+    result: dict[str, Any] = {"count": len(data), "memories": data}
+    if path:
+        target = Path(path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        result["path"] = str(target)
+    return result
+
+
+def import_memories(data: Any, mode: str = "merge") -> dict[str, Any]:
+    """Importa recuerdos desde una lista o desde un path a un archivo JSON.
+
+    mode:
+    - "merge" (default): agrega los recuerdos sin borrar los existentes.
+    - "replace": borra todos los recuerdos existentes antes de importar.
+    """
+    items: list[dict[str, Any]] = []
+    if isinstance(data, str):
+        source = Path(data).expanduser()
+        if not source.exists():
+            raise FileNotFoundError(f"No se encontró el archivo: {source}")
+        items = json.loads(source.read_text(encoding="utf-8"))
+    elif isinstance(data, list):
+        items = data
+    else:
+        raise ValueError("data debe ser una lista de recuerdos o una ruta a un archivo JSON")
+
+    if not isinstance(items, list):
+        raise ValueError("El JSON debe contener una lista de recuerdos")
+
+    if str(mode).lower() == "replace":
+        DB.execute("DELETE FROM memories")
+        DB.execute("DELETE FROM memories_fts")
+        DB.commit()
+
+    now = int(time.time())
+    imported = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        cleaned = strip_private_sections(content).strip()
+        if not cleaned:
+            continue
+        cat = normalize_category(item.get("category"))
+        proj = str(item.get("project")).strip() if item.get("project") else None
+        created = int(item.get("created_at", now))
+        updated = int(item.get("updated_at", created))
+        DB.execute(
+            "INSERT INTO memories (content, category, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (cleaned, cat, proj, created, updated),
+        )
+        imported += 1
+    DB.commit()
+    return {"imported": imported}
 
 
 def _result_with_snippet(row: sqlite3.Row) -> dict[str, Any]:
@@ -446,6 +515,48 @@ TOOLS = [
             "required": ["id"],
         },
     },
+    {
+        "name": "memory_export",
+        "description": (
+            "Exporta todos los recuerdos (o los de un proyecto) a JSON. "
+            "Úsalo para hacer backup o migrar la memoria a otra máquina."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Filtrar por proyecto (opcional).",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Ruta donde guardar el JSON (opcional). Si no se indica, devuelve el JSON en la respuesta.",
+                },
+            },
+        },
+    },
+    {
+        "name": "memory_import",
+        "description": (
+            "Importa recuerdos desde una lista JSON o desde un archivo JSON. "
+            "Modo 'merge' agrega sin borrar; modo 'replace' borra todo antes de importar."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Lista de recuerdos o ruta a un archivo JSON.",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["merge", "replace"],
+                    "default": "merge",
+                    "description": "'merge' agrega; 'replace' borra todo antes de importar.",
+                },
+            },
+            "required": ["data"],
+        },
+    },
 ]
 
 
@@ -547,6 +658,16 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
         return timeline_memory(memory_id=args["id"], window=args.get("window", 3))
     if name == "memory_delete":
         return delete_memory(args["id"])
+    if name == "memory_export":
+        return export_memories(
+            project=args.get("project"),
+            path=args.get("path"),
+        )
+    if name == "memory_import":
+        return import_memories(
+            data=args["data"],
+            mode=args.get("mode", "merge"),
+        )
     raise ValueError(f"Herramienta desconocida: {name}")
 
 

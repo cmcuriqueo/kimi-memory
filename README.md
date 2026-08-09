@@ -72,6 +72,8 @@ y enviá por stdin:
 | `memory_recent` | Devuelve los recuerdos más recientes. |
 | `memory_timeline` | Muestra recuerdos cercanos a un ID. |
 | `memory_delete` | Elimina un recuerdo por ID. |
+| `memory_export` | Exporta recuerdos a JSON. |
+| `memory_import` | Importa recuerdos desde JSON. |
 
 ## 📂 Estructura
 
