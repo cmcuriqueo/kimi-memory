@@ -17,6 +17,13 @@ Para no quemar tokens, seguí este orden:
    ```
    Devuelve IDs, snippets cortos y score. NO leas el contenido completo todavía.
 
+   Podés filtrar por fecha con `since`/`after` y `before`:
+   ```
+   memory_search(query="autenticación JWT", since="7d")
+   memory_search(query="login", before="2026-08-01")
+   ```
+   Formatos soportados: ISO 8601 (`2026-08-09`) o relativos (`7d`, `1h`, `30m`, `2w`, `3mo`, `1y`).
+
 2. **Obtener contexto cronológico** de los IDs interesantes:
    ```
    memory_timeline(id=42, window=3)

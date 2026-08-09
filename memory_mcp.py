@@ -5,6 +5,7 @@ Memoria persistente para Kimi Code CLI usando SQLite + FTS5.
 Comunicación MCP sobre stdio (JSON-RPC 2.0).
 """
 
+import datetime
 import json
 import os
 import re
@@ -128,6 +129,59 @@ def normalize_category(category: Any) -> str | None:
 _PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 
 
+_RELATIVE_TIME_RE = re.compile(r"^(\d+)\s*(s|m|h|d|w|mo|y)$", re.IGNORECASE)
+
+
+def parse_timestamp(value: Any) -> int | None:
+    """Convierte una fecha a timestamp Unix.
+
+    Soporta:
+    - Timestamp Unix (int o string numérico).
+    - ISO 8601: 2026-08-09 o 2026-08-09T10:00:00.
+    - Relativas: 7d, 1h, 30m, 2w, 3mo, 1y.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).strip()
+    if not s:
+        return None
+
+    # Timestamp puro
+    if s.isdigit():
+        return int(s)
+
+    # Relativa, ej: 7d, 1h, 30m, 2w, 3mo, 1y
+    match = _RELATIVE_TIME_RE.match(s)
+    if match:
+        amount = int(match.group(1))
+        unit = match.group(2).lower()
+        delta_kwargs: dict[str, int] = {}
+        if unit == "s":
+            delta_kwargs["seconds"] = amount
+        elif unit == "m":
+            delta_kwargs["minutes"] = amount
+        elif unit == "h":
+            delta_kwargs["hours"] = amount
+        elif unit == "d":
+            delta_kwargs["days"] = amount
+        elif unit == "w":
+            delta_kwargs["days"] = amount * 7
+        elif unit == "mo":
+            delta_kwargs["days"] = amount * 30
+        elif unit == "y":
+            delta_kwargs["days"] = amount * 365
+        return int((datetime.datetime.now() - datetime.timedelta(**delta_kwargs)).timestamp())
+
+    # ISO 8601
+    try:
+        dt = datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return int(dt.timestamp())
+    except ValueError:
+        raise ValueError(f"Formato de fecha no soportado: {s}")
+
+
 def strip_private_sections(content: str) -> str:
     """Elimina secciones marcadas como <private>...</private> del contenido.
 
@@ -164,11 +218,26 @@ def add_memory(content: str, category: str | None = None, project: str | None = 
     return {"id": cur.lastrowid, "added": True}
 
 
-def search_memories(query: str, limit: int = 10, project: str | None = None) -> list[dict[str, Any]]:
+def search_memories(
+    query: str,
+    limit: int = 10,
+    project: str | None = None,
+    since: Any = None,
+    before: Any = None,
+    after: Any = None,
+) -> list[dict[str, Any]]:
     if not query or not str(query).strip():
         return recent_memories(limit=limit)
     q = str(query).strip()
     limit = max(1, min(int(limit), 100))
+
+    # Filtros de fecha
+    since_ts = parse_timestamp(since)
+    before_ts = parse_timestamp(before)
+    after_ts = parse_timestamp(after)
+    # 'since' es alias de 'after' (inclusive)
+    start_ts = after_ts if after_ts is not None else since_ts
+
     sql = """
         SELECT m.id, m.content, m.category, m.project, m.created_at,
                rank AS score
@@ -180,6 +249,12 @@ def search_memories(query: str, limit: int = 10, project: str | None = None) -> 
     if project:
         sql += " AND m.project = ?"
         params.append(project)
+    if start_ts is not None:
+        sql += " AND m.created_at >= ?"
+        params.append(start_ts)
+    if before_ts is not None:
+        sql += " AND m.created_at <= ?"
+        params.append(before_ts)
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     rows = DB.execute(sql, params).fetchall()
@@ -283,6 +358,18 @@ TOOLS = [
                 "project": {
                     "type": "string",
                     "description": "Filtrar por proyecto (opcional).",
+                },
+                "since": {
+                    "type": "string",
+                    "description": "Fecha mínima: ISO 8601 (2026-08-09) o relativa (7d, 1h, 30m, 2w, 3mo, 1y). Alias de 'after'.",
+                },
+                "before": {
+                    "type": "string",
+                    "description": "Fecha máxima: ISO 8601 o relativa.",
+                },
+                "after": {
+                    "type": "string",
+                    "description": "Fecha mínima: ISO 8601 o relativa. Igual que 'since'.",
                 },
             },
             "required": ["query"],
@@ -448,6 +535,9 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
             query=args["query"],
             limit=args.get("limit", 10),
             project=args.get("project"),
+            since=args.get("since"),
+            before=args.get("before"),
+            after=args.get("after"),
         )
     if name == "memory_get":
         return get_memories(args["ids"])
