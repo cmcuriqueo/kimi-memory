@@ -54,7 +54,7 @@ cp -f "${REPO_DIR}/kimi.plugin.json" "${PLUGIN_DIR}/"
 if [ -d "${REPO_DIR}/hooks" ]; then
     echo "Copiando hooks a ${PLUGIN_DIR}/hooks..."
     mkdir -p "${PLUGIN_DIR}/hooks"
-    cp -f "${REPO_DIR}/hooks/"* "${PLUGIN_DIR}/hooks/"
+    cp -f "${REPO_DIR}/hooks/"*.py "${PLUGIN_DIR}/hooks/"
 fi
 
 # Copiar skill
@@ -68,29 +68,38 @@ if [ ! -f "${MCP_CONFIG}" ]; then
     echo "{}" > "${MCP_CONFIG}"
 fi
 
-# Actualizar ~/.kimi/mcp.json con jq si está disponible; si no, usar Python
-MEMORY_DB="${HOME}/.kimi-code/memory.db"
+# Normalizar rutas a Windows si estamos en Git Bash / MSYS2
+if command -v cygpath &>/dev/null; then
+    PYTHON_ABS="$(cygpath -w "${PYTHON_ABS}")"
+    PLUGIN_DIR="$(cygpath -w "${PLUGIN_DIR}")"
+    MEMORY_DB="$(cygpath -w "${HOME}/.kimi-code/memory.db")"
+else
+    MEMORY_DB="${HOME}/.kimi-code/memory.db"
+fi
 
+# Actualizar ~/.kimi/mcp.json con jq si está disponible; si no, usar Python
 if command -v jq &>/dev/null; then
     jq --arg cmd "${PYTHON_ABS}" \
-       --arg arg "${PLUGIN_DIR}/memory_mcp.py" \
+       --arg arg "${PLUGIN_DIR}\\memory_mcp.py" \
        --arg db "${MEMORY_DB}" \
        '.mcpServers["kimi-memory"] = {command: $cmd, args: ["-u", $arg], env: {KIMI_MEMORY_DB: $db}}' \
        "${MCP_CONFIG}" > "${MCP_CONFIG}.tmp" && mv "${MCP_CONFIG}.tmp" "${MCP_CONFIG}"
 else
     "${PYTHON}" - <<PY
-import json, os
-path = os.path.expanduser("${MCP_CONFIG}")
-with open(path, "r") as f:
-    cfg = json.load(f)
+import json
+from pathlib import Path
+path = Path.home() / ".kimi" / "mcp.json"
+path.parent.mkdir(parents=True, exist_ok=True)
+if not path.exists():
+    path.write_text("{}", encoding="utf-8")
+cfg = json.loads(path.read_text(encoding="utf-8"))
 cfg.setdefault("mcpServers", {})
 cfg["mcpServers"]["kimi-memory"] = {
-    "command": "${PYTHON_ABS}",
-    "args": ["-u", "${PLUGIN_DIR}/memory_mcp.py"],
-    "env": {"KIMI_MEMORY_DB": "${MEMORY_DB}"}
+    "command": r"${PYTHON_ABS}",
+    "args": ["-u", r"${PLUGIN_DIR}\memory_mcp.py"],
+    "env": {"KIMI_MEMORY_DB": r"${MEMORY_DB}"}
 }
-with open(path, "w") as f:
-    json.dump(cfg, f, indent=2)
+path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 print("MCP config actualizado:", path)
 PY
 fi

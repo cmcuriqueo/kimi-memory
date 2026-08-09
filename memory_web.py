@@ -312,7 +312,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         if length == 0:
             return {}
-        raw = self.rfile.read(length).decode("utf-8")
+        data = self.rfile.read(length)
+        try:
+            raw = data.decode("utf-8")
+        except UnicodeDecodeError:
+            raw = data.decode("latin-1")
         return json.loads(raw)
 
     def do_OPTIONS(self):
