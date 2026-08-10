@@ -1,6 +1,6 @@
 {
   "name": "kimi-memory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Memoria persistente minimalista para Kimi Code CLI (SQLite + FTS5, sin dependencias externas).",
   "keywords": ["memory", "context", "mcp", "sqlite"],
   "skills": "./",
@@ -8,13 +8,6 @@
     "skill": "kimi-memory"
   },
   "skillInstructions": "Siempre que retomes una sesión o proyecto, usa memory_search o memory_recent para recuperar contexto relevante antes de actuar. Guarda decisiones importantes, bugfixes y aprendizajes con memory_add.",
-  "mcpServers": {
-    "kimi-memory": {
-      "command": "python",
-      "args": ["-u", "memory_mcp.py"],
-      "cwd": "./"
-    }
-  },
   "interface": {
     "displayName": "Kimi Memory",
     "shortDescription": "Memoria persistente local para Kimi Code CLI"

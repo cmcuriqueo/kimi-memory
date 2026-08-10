@@ -4,6 +4,14 @@ Todos los cambios notables se documentan en este archivo.
 
 ## [Unreleased]
 
+### Fixed
+- Los instaladores (`cli.js`, `install.sh`, `install.ps1`) ahora detectan el directorio de configuración del CLI: usan `~/.kimi-code` si existe y caen a `~/.kimi` en instalaciones viejas. Antes escribían `mcp.json` y los hooks siempre en `~/.kimi`, por lo que el CLI actual (que lee `~/.kimi-code`) no registraba el servidor MCP ni los hooks.
+- Los bloques `[[hooks]]` se insertan antes de la primera tabla `[sección]` de `config.toml`; al final del archivo TOML quedaban dentro de la última tabla y no cargaban.
+- Matcher de `PostToolUse` actualizado a `Write|Edit|WriteFile|StrReplaceFile` (el CLI actual usa `Write`/`Edit`).
+- El comando del hook usa la ruta absoluta del intérprete de Python detectado (no asume `python` en PATH).
+- `install.sh`: el path de `memory_mcp.py` en `mcp.json` usaba separador `\\` de Windows también en Linux/macOS.
+- `kimi.plugin.json`: se eliminó la entrada `mcpServers` con `cwd: "./"` (apuntaba al proyecto del usuario y fallaba); el servidor MCP se registra únicamente en `mcp.json`.
+
 ### Added
 - Tags múltiples y relaciones entre recuerdos:
   - Nuevas tablas `memory_tags` y `memory_relations`.

@@ -5,10 +5,16 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_DIR="${HOME}/.kimi-code/plugins/kimi-memory"
-SKILL_DIR="${HOME}/.kimi/skills/kimi-memory"
-MCP_CONFIG_DIR="${HOME}/.kimi"
-MCP_CONFIG="${MCP_CONFIG_DIR}/mcp.json"
+
+# El CLI actual usa ~/.kimi-code; versiones viejas usan ~/.kimi.
+if [ -d "${HOME}/.kimi-code" ]; then
+    CONFIG_HOME="${HOME}/.kimi-code"
+else
+    CONFIG_HOME="${HOME}/.kimi"
+fi
+PLUGIN_DIR="${CONFIG_HOME}/plugins/kimi-memory"
+SKILL_DIR="${CONFIG_HOME}/skills/kimi-memory"
+MCP_CONFIG="${CONFIG_HOME}/mcp.json"
 
 echo "== Kimi Memory =="
 echo "Repo:    ${REPO_DIR}"
@@ -62,8 +68,8 @@ echo "Copiando skill a ${SKILL_DIR}..."
 mkdir -p "${SKILL_DIR}"
 cp -f "${REPO_DIR}/skills/kimi-memory/SKILL.md" "${SKILL_DIR}/"
 
-# Crear ~/.kimi/mcp.json si no existe
-mkdir -p "${MCP_CONFIG_DIR}"
+# Crear mcp.json si no existe
+mkdir -p "${CONFIG_HOME}"
 if [ ! -f "${MCP_CONFIG}" ]; then
     echo "{}" > "${MCP_CONFIG}"
 fi
@@ -72,15 +78,18 @@ fi
 if command -v cygpath &>/dev/null; then
     PYTHON_ABS="$(cygpath -w "${PYTHON_ABS}")"
     PLUGIN_DIR="$(cygpath -w "${PLUGIN_DIR}")"
-    MEMORY_DB="$(cygpath -w "${HOME}/.kimi-code/memory.db")"
+    SEP="\\"
+    MEMORY_DB="$(cygpath -w "${CONFIG_HOME}/memory.db")"
 else
-    MEMORY_DB="${HOME}/.kimi-code/memory.db"
+    SEP="/"
+    MEMORY_DB="${CONFIG_HOME}/memory.db"
 fi
+MCP_SCRIPT="${PLUGIN_DIR}${SEP}memory_mcp.py"
 
-# Actualizar ~/.kimi/mcp.json con jq si está disponible; si no, usar Python
+# Actualizar mcp.json con jq si está disponible; si no, usar Python
 if command -v jq &>/dev/null; then
     jq --arg cmd "${PYTHON_ABS}" \
-       --arg arg "${PLUGIN_DIR}\\memory_mcp.py" \
+       --arg arg "${MCP_SCRIPT}" \
        --arg db "${MEMORY_DB}" \
        '.mcpServers["kimi-memory"] = {command: $cmd, args: ["-u", $arg], env: {KIMI_MEMORY_DB: $db}}' \
        "${MCP_CONFIG}" > "${MCP_CONFIG}.tmp" && mv "${MCP_CONFIG}.tmp" "${MCP_CONFIG}"
@@ -88,7 +97,7 @@ else
     "${PYTHON}" - <<PY
 import json
 from pathlib import Path
-path = Path.home() / ".kimi" / "mcp.json"
+path = Path(r"${MCP_CONFIG}")
 path.parent.mkdir(parents=True, exist_ok=True)
 if not path.exists():
     path.write_text("{}", encoding="utf-8")
@@ -96,7 +105,7 @@ cfg = json.loads(path.read_text(encoding="utf-8"))
 cfg.setdefault("mcpServers", {})
 cfg["mcpServers"]["kimi-memory"] = {
     "command": r"${PYTHON_ABS}",
-    "args": ["-u", r"${PLUGIN_DIR}\memory_mcp.py"],
+    "args": ["-u", r"${MCP_SCRIPT}"],
     "env": {"KIMI_MEMORY_DB": r"${MEMORY_DB}"}
 }
 path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")

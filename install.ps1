@@ -2,10 +2,12 @@
 # Asume que se ejecuta desde el directorio del repositorio clonado.
 
 $RepoDir = (Resolve-Path -Path $PSScriptRoot).Path
-$PluginDir = "$env:USERPROFILE\.kimi-code\plugins\kimi-memory"
-$SkillDir = "$env:USERPROFILE\.kimi\skills\kimi-memory"
-$McpConfigDir = "$env:USERPROFILE\.kimi"
-$McpConfig = "$McpConfigDir\mcp.json"
+
+# El CLI actual usa .kimi-code; versiones viejas usan .kimi.
+$ConfigHome = if (Test-Path "$env:USERPROFILE\.kimi-code") { "$env:USERPROFILE\.kimi-code" } else { "$env:USERPROFILE\.kimi" }
+$PluginDir = "$ConfigHome\plugins\kimi-memory"
+$SkillDir = "$ConfigHome\skills\kimi-memory"
+$McpConfig = "$ConfigHome\mcp.json"
 
 Write-Host "== Kimi Memory ==" -ForegroundColor Cyan
 Write-Host "Repo:   $RepoDir" -ForegroundColor Cyan
@@ -51,14 +53,14 @@ Write-Host "Copiando skill a $SkillDir..."
 New-Item -ItemType Directory -Force -Path $SkillDir | Out-Null
 Copy-Item -Path "$RepoDir\skills\kimi-memory\SKILL.md" -Destination "$SkillDir\SKILL.md" -Force
 
-# Crear ~/.kimi/mcp.json si no existe
-New-Item -ItemType Directory -Force -Path $McpConfigDir | Out-Null
+# Crear mcp.json si no existe
+New-Item -ItemType Directory -Force -Path $ConfigHome | Out-Null
 if (-not (Test-Path $McpConfig)) {
     '{"mcpServers": {}}' | Set-Content -Path $McpConfig -Encoding UTF8
 }
 
-# Actualizar ~/.kimi/mcp.json
-$MemoryDb = "$env:USERPROFILE\.kimi-code\memory.db"
+# Actualizar mcp.json
+$MemoryDb = "$ConfigHome\memory.db"
 $Config = Get-Content -Path $McpConfig -Raw | ConvertFrom-Json
 if (-not $Config.mcpServers) {
     $Config | Add-Member -NotePropertyName mcpServers -NotePropertyValue @{} -Force

@@ -37,12 +37,12 @@ cd kimi-memory
 .\install.ps1      # PowerShell (Windows)
 ```
 
-Los instaladores:
+Los instaladores detectan el directorio de configuración de Kimi Code CLI (`~/.kimi-code` si existe; si no, `~/.kimi` en versiones viejas) y:
 1. Verifican Python y FTS5.
-2. Copian el plugin a `~/.kimi-code/plugins/kimi-memory/`.
-3. Copian el skill a `~/.kimi/skills/kimi-memory/`.
-4. Registran el servidor MCP en `~/.kimi/mcp.json`.
-5. Opcionalmente configuran el hook `SessionEnd` en `~/.kimi/config.toml`.
+2. Copian el plugin a `<config-home>/plugins/kimi-memory/`.
+3. Copian el skill a `<config-home>/skills/kimi-memory/`.
+4. Registran el servidor MCP en `<config-home>/mcp.json`.
+5. Opcionalmente (`--hook`, solo con `npx`) configuran los hooks en `<config-home>/config.toml`.
 
 > ⚠️ Reiniciá Kimi Code CLI después de instalar.
 
@@ -172,7 +172,7 @@ Kimi Code CLI puede ejecutar hooks en eventos del ciclo de vida. Kimi Memory inc
 | Evento | Qué guarda | Categoría |
 |---|---|---|
 | `SessionEnd` | Resumen de la sesión (temas, herramientas, cwd). | `session_summary` |
-| `PostToolUse` | Archivos modificados con `WriteFile` o `StrReplaceFile`. | `file_change` |
+| `PostToolUse` | Archivos modificados con `Write`/`Edit` (o `WriteFile`/`StrReplaceFile` en versiones viejas). | `file_change` |
 | `UserPromptSubmit` | Prompts del usuario que parecen relevantes (bugs, decisiones, arquitectura, etc.). | `prompt` |
 | `PreCompact` | Compactaciones de contexto (trigger y tokens). | `compaction_context` |
 | `StopFailure` | Errores al finalizar un turno. | `bugfix` |
@@ -185,7 +185,7 @@ npx kimi-memory install --hook
 
 ### Activación manual
 
-Agregá esto a `~/.kimi/config.toml`:
+Agregá esto a `~/.kimi-code/config.toml` (o `~/.kimi/config.toml` en versiones viejas del CLI), **antes de cualquier tabla `[sección]`**:
 
 ```toml
 [[hooks]]
@@ -194,7 +194,7 @@ command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
 
 [[hooks]]
 event = "PostToolUse"
-matcher = "WriteFile|StrReplaceFile"
+matcher = "Write|Edit|WriteFile|StrReplaceFile"
 command = "python ~/.kimi-code/plugins/kimi-memory/hooks/memory_hook.py"
 
 [[hooks]]
