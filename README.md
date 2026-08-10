@@ -214,6 +214,35 @@ En Windows reemplazá `~/.kimi-code` por `%USERPROFILE%\\.kimi-code`.
 
 > ⚠️ Los hooks requieren que el plugin esté instalado (ver `install.sh` / `install.ps1`).
 
+## 📊 Benchmarks
+
+El proyecto incluye benchmarks cuantitativos en `tests/benchmarks/` para medir si la memoria realmente ahorra tokens y mejora la calidad de las respuestas.
+
+### Instalar dependencias
+
+```bash
+pip install -e ".[dev,benchmark]"
+```
+
+### Correr benchmarks
+
+```bash
+pytest tests/benchmarks -v
+```
+
+### Métricas que se reportan
+
+| Métrica | Qué mide |
+|---|---|
+| **Ahorro de tokens (%)** | Cuánto se reduce el prompt al recuperar memoria en lugar de repetir contexto. |
+| **Precision@3** | De los top-3 resultados de búsqueda, cuántos son realmente relevantes. |
+| **Recall@5** | De todos los recuerdos relevantes, cuántos aparecen en top-5. |
+| **MRR** | Rank medio del primer resultado relevante. |
+| **Cobertura de hechos (%)** | Cuántos hechos clave de la tarea aparecen en la memoria recuperada. |
+| **Overhead de búsqueda (%)** | Costo de buscar memoria cuando no hay nada relevante. |
+
+Los benchmarks usan escenarios sintéticos de proyectos reales (autenticación, base de datos, deploy, frontend). No requieren llamadas a APIs externas.
+
 ## 🗺️ Roadmap
 
 Ver [`TODO.md`](./TODO.md) para la lista completa de mejoras planificadas.

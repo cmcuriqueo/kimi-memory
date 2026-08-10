@@ -28,6 +28,11 @@ classifiers = [
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "tiktoken>=0.7",
+]
+benchmark = [
+    "tiktoken>=0.7",
+    "pytest-benchmark>=4.0",
 ]
 
 [project.scripts]
@@ -37,6 +42,9 @@ kimi-memory = "cli:main"
 Homepage = "https://github.com/cmcuriqueo/kimi-memory"
 Repository = "https://github.com/cmcuriqueo/kimi-memory"
 Issues = "https://github.com/cmcuriqueo/kimi-memory/issues"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["memory_mcp.py", "memory_web.py", "hooks"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
