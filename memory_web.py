@@ -766,7 +766,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     server = HTTPServer(("127.0.0.1", PORT), Handler)
     print(f"[kimi-memory-web] http://127.0.0.1:{PORT}")
-    print(f"[kimi-memory-web] DB: {memory_mcp.DB_PATH}")
+    print(f"[kimi-memory-web] DB: {memory_mcp.get_db_path()}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
