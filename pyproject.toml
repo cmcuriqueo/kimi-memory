@@ -33,6 +33,9 @@ dev = [
 [project.scripts]
 kimi-memory = "cli:main"
 
+[tool.hatch.build.targets.wheel]
+include = ["memory_mcp.py", "memory_web.py", "test_mcp.py"]
+
 [project.urls]
 Homepage = "https://github.com/cmcuriqueo/kimi-memory"
 Repository = "https://github.com/cmcuriqueo/kimi-memory"
