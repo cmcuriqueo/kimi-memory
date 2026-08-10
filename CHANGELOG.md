@@ -4,6 +4,22 @@ Todos los cambios notables se documentan en este archivo.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-10
+
+### Added
+- Optimizaciones para ahorrar tokens:
+  - **Gist automático**: cada recuerdo largo genera un resumen corto. `memory_search` y `memory_get` devuelven el campo `gist`.
+  - **Sanitización FTS5**: `memory_search` limpia automáticamente consultas con `.`, `-`, `"`, etc., evitando errores de sintaxis.
+  - **Deduplicación**: `memory_add` detecta recuerdos similares y actualiza el existente en lugar de crear duplicados. Se puede desactivar con `deduplicate: false`.
+  - **Indexación de proyectos**: nueva herramienta `memory_index_project` que escanea archivos del repo y guarda descripciones cortas como recuerdos `file_index`.
+  - **Diff en hooks**: el hook `PostToolUse` ahora guarda el `unified_diff` del archivo modificado en lugar de solo el path.
+- Nuevas herramientas MCP:
+  - `memory_index_project`
+- Nuevos tests para benchmarks, gist, deduplicación, indexación y diff.
+
+### Changed
+- `pyproject.toml`: agregada configuración de `hatchling` para que `pip install -e .` funcione correctamente.
+
 ### Fixed
 - Los instaladores (`cli.js`, `install.sh`, `install.ps1`) ahora detectan el directorio de configuración del CLI: usan `~/.kimi-code` si existe y caen a `~/.kimi` en instalaciones viejas. Antes escribían `mcp.json` y los hooks siempre en `~/.kimi`, por lo que el CLI actual (que lee `~/.kimi-code`) no registraba el servidor MCP ni los hooks.
 - Los bloques `[[hooks]]` se insertan antes de la primera tabla `[sección]` de `config.toml`; al final del archivo TOML quedaban dentro de la última tabla y no cargaban.
@@ -11,6 +27,9 @@ Todos los cambios notables se documentan en este archivo.
 - El comando del hook usa la ruta absoluta del intérprete de Python detectado (no asume `python` en PATH).
 - `install.sh`: el path de `memory_mcp.py` en `mcp.json` usaba separador `\\` de Windows también en Linux/macOS.
 - `kimi.plugin.json`: se eliminó la entrada `mcpServers` con `cwd: "./"` (apuntaba al proyecto del usuario y fallaba); el servidor MCP se registra únicamente en `mcp.json`.
+- `memory_search` incluye `updated_at` en el SELECT para evitar error al construir el snippet.
+
+## [0.2.2] - 2026-08-09
 
 ### Added
 - Tags múltiples y relaciones entre recuerdos:
@@ -47,9 +66,6 @@ Todos los cambios notables se documentan en este archivo.
   - `StopFailure`: guarda errores como `bugfix`.
 - Web Viewer UI (`memory_web.py`): servidor HTTP local para ver, buscar, agregar, editar, eliminar y exportar recuerdos desde el navegador.
 - Instalador npm (`npx kimi-memory install`): instala todo con un solo comando, con opción `--hook` para activar el hook SessionEnd.
-
-### Fixed
-- `memory_search` incluye `updated_at` en el SELECT para evitar error al construir el snippet.
 
 ## [0.1.0] - 2026-08-09
 
