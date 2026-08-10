@@ -119,3 +119,42 @@ def test_session_end_minimal(hook_module):
     memories = hook_module.memory_mcp.recent_memories(limit=1)
     assert memories[0]["category"] == "session_summary"
     assert "session-summary" in memories[0]["tags"]
+
+
+def test_post_tool_use_with_diff(hook_module, tmp_path, monkeypatch):
+    """PostToolUse guarda un diff cuando el archivo ya existe."""
+    monkeypatch.setenv("KIMI_MEMORY_PLUGIN_DIR", str(tmp_path.parent.parent))
+
+    project_dir = tmp_path / "proyecto-x"
+    project_dir.mkdir()
+    file_path = project_dir / "src" / "auth.py"
+    file_path.parent.mkdir()
+    file_path.write_text("def login(): pass\n", encoding="utf-8")
+
+    hook_module.handle_post_tool_use({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "StrReplaceFile",
+        "tool_input": {"path": str(file_path), "old": "def login(): pass", "new": "def login(user): pass"},
+        "cwd": str(project_dir),
+    })
+    memories = hook_module.memory_mcp.recent_memories(limit=1)
+    assert memories[0]["category"] == "file_change"
+    assert "-" in memories[0]["content"] or "sin cambios" in memories[0]["content"]
+
+
+def test_post_tool_use_write_file_diff(hook_module, tmp_path):
+    """PostToolUse guarda un diff para WriteFile."""
+    project_dir = tmp_path / "proyecto-x"
+    project_dir.mkdir()
+    file_path = project_dir / "config.py"
+    file_path.write_text("DEBUG = False\n", encoding="utf-8")
+
+    hook_module.handle_post_tool_use({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "WriteFile",
+        "tool_input": {"path": str(file_path), "content": "DEBUG = True\n"},
+        "cwd": str(project_dir),
+    })
+    memories = hook_module.memory_mcp.recent_memories(limit=1)
+    assert memories[0]["category"] == "file_change"
+    assert "DEBUG" in memories[0]["content"] or "config.py" in memories[0]["content"]

@@ -104,6 +104,7 @@ def init_db(path: Path) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
+            gist TEXT,
             category TEXT,
             project TEXT,
             created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -159,6 +160,11 @@ def init_db(path: Path) -> sqlite3.Connection:
     # Migración: agregar columna uuid si no existe (tablas creadas en versiones anteriores).
     try:
         conn.execute("ALTER TABLE memories ADD COLUMN uuid TEXT UNIQUE")
+    except sqlite3.OperationalError:
+        pass
+    # Migración: agregar columna gist si no existe.
+    try:
+        conn.execute("ALTER TABLE memories ADD COLUMN gist TEXT")
     except sqlite3.OperationalError:
         pass
     conn.execute(
@@ -237,6 +243,239 @@ def normalize_related_ids(related_ids: Any, memory_id: int | None = None) -> lis
         except (ValueError, TypeError):
             continue
     return sorted(result)
+
+
+# ---------------------------------------------------------------------------
+# Configuración de ahorro de tokens
+# ---------------------------------------------------------------------------
+GIST_MAX_SENTENCES = 2
+GIST_MAX_WORDS = 50  # aproximadamente 60-65 tokens
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimación rápida de tokens sin dependencias externas."""
+    return int(len(text.split()) * 1.3)
+
+
+def generate_gist(content: str) -> str:
+    """Genera un resumen corto (gist) de un recuerdo.
+
+    Si el contenido ya es corto, lo devuelve completo. Si no, toma las primeras
+    oraciones hasta un límite de palabras. No requiere LLM externo.
+    """
+    if not content:
+        return ""
+    content = content.strip()
+    if _estimate_tokens(content) <= GIST_MAX_WORDS:
+        return content
+
+    # Separar en oraciones de forma simple pero robusta para español/inglés.
+    sentences = re.split(r"(?<=[.!?])\s+", content)
+    gist_parts: list[str] = []
+    word_count = 0
+    for sentence in sentences:
+        words = sentence.split()
+        if not words:
+            continue
+        if gist_parts and word_count + len(words) > GIST_MAX_WORDS:
+            break
+        gist_parts.append(sentence)
+        word_count += len(words)
+        if len(gist_parts) >= GIST_MAX_SENTENCES:
+            break
+
+    gist = " ".join(gist_parts).strip()
+    if not gist:
+        # Fallback: primeras palabras del contenido.
+        words = content.split()
+        gist = " ".join(words[:GIST_MAX_WORDS])
+    if len(gist) < len(content):
+        gist = gist.rstrip(".!?") + "..."
+    return gist
+
+
+def sanitize_fts_query(query: str) -> str:
+    """Limpia una consulta para que sea segura para FTS5.
+
+    FTS5 interpreta ciertos caracteres (., -, ", etc.) como operadores. Esta
+    función extrae tokens alfanuméricos (incluyendo unicode) y los une con
+    espacios, convirtiendo implícitamente la búsqueda en AND de tokens.
+    """
+    if not query:
+        return ""
+    tokens = re.findall(r"[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]+", query)
+    # Filtrar tokens muy cortos que no aportan (ej. "a", "en" pueden ser
+    # ruidosos, pero los dejamos si son >= 2 caracteres).
+    tokens = [t for t in tokens if len(t) >= 2]
+    return " ".join(tokens)
+
+
+def _token_set(text: str) -> set[str]:
+    """Conjunto de tokens normalizados para comparación de similitud."""
+    return set(re.findall(r"[a-zA-Z0-9\u00C0-\u024F\u1E00-\u1EFF]{2,}", text.lower()))
+
+
+def _jaccard_similarity(a: set, b: set) -> float:
+    """Similitud de Jaccard entre dos conjuntos."""
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _overlap_similarity(a: set, b: set) -> float:
+    """Overlap coefficient: cuanto de A esta contenido en B (o viceversa).
+
+    Util para detectar cuando un contenido es una extension de otro.
+    """
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+def find_similar_memories(
+    content: str,
+    project: str | None = None,
+    threshold: float = 0.65,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Busca recuerdos similares al contenido dado.
+
+    Usa una búsqueda FTS5 con palabras clave y luego rankea por similitud de
+    Jaccard sobre conjuntos de palabras.
+    """
+    tokens = list(_token_set(content))
+    if not tokens:
+        return []
+
+    # Tomar hasta 5 palabras clave para la búsqueda FTS5.
+    search_tokens = tokens[:5]
+    query = " OR ".join(search_tokens)
+
+    candidates = search_memories(query, project=project, limit=limit * 3)
+    content_tokens = _token_set(content)
+    results: list[tuple[float, dict[str, Any]]] = []
+    for cand in candidates:
+        cand_tokens = _token_set(cand["content"])
+        common = content_tokens & cand_tokens
+        similarity = _overlap_similarity(content_tokens, cand_tokens)
+        # Requerir suficientes tokens en comun para evitar falsos positivos en
+        # contenido muy corto (ej. "Recuerdo A" vs "Recuerdo B").
+        min_common = max(2, int(min(len(content_tokens), len(cand_tokens)) * threshold))
+        if similarity >= threshold and len(common) >= min_common:
+            results.append((similarity, cand))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [r[1] for r in results[:limit]]
+
+
+def _description_for_file(path: Path, content: str) -> str:
+    """Genera una descripción corta para un archivo de proyecto."""
+    lines = content.splitlines()
+    comment_lines: list[str] = []
+    for line in lines[:20]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Comentarios comunes: #, //, /*, *, """
+        if stripped.startswith(("#", "//", "/*", "*", '"""', "'''")):
+            comment_lines.append(stripped.lstrip("*/# \t\"'"))
+        else:
+            break
+
+    if comment_lines:
+        description = " ".join(comment_lines[:3])
+        description = description[:200].strip()
+        if description:
+            return f"Archivo {path.name}: {description}"
+
+    return f"Archivo {path.name}: implementación en {path.suffix or 'texto'}."
+
+
+_INDEX_IGNORE_DIRS = {
+    ".git",
+    ".github",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".idea",
+    ".vscode",
+}
+
+_INDEX_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".md",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".sh",
+    ".ps1",
+}
+
+
+def index_project(path: str | Path, project: str | None = None) -> dict[str, Any]:
+    """Indexa archivos de un proyecto y guarda descripciones cortas en memoria.
+
+    Ignora directorios de dependencias y archivos binarios. Devuelve un resumen
+    de cuántos archivos se indexaron.
+    """
+    root = Path(path).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"No es un directorio: {root}")
+
+    project_name = project or root.name
+    indexed = 0
+    skipped = 0
+
+    for item in root.rglob("*"):
+        if not item.is_file():
+            continue
+        if any(part in _INDEX_IGNORE_DIRS for part in item.parts):
+            skipped += 1
+            continue
+        if item.suffix.lower() not in _INDEX_EXTENSIONS:
+            skipped += 1
+            continue
+        try:
+            content = item.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            skipped += 1
+            continue
+
+        description = _description_for_file(item, content)
+        relative = item.relative_to(root).as_posix()
+        tags = ["file-index", item.suffix.lstrip(".").lower()]
+        if item.name.lower() not in tags:
+            tags.append(item.name.lower())
+
+        add_memory(
+            content=description,
+            category="file_index",
+            project=project_name,
+            tags=tags,
+            deduplicate=True,
+        )
+        indexed += 1
+
+    return {"indexed": indexed, "skipped": skipped, "project": project_name, "path": str(root)}
 
 
 def generate_uuid() -> str:
@@ -363,10 +602,12 @@ def strip_private_sections(content: str) -> str:
 
 
 def row_to_dict(row: sqlite3.Row, include_extras: bool = True) -> dict[str, Any]:
+    gist = row["gist"] if "gist" in row.keys() and row["gist"] else generate_gist(row["content"])
     d = {
         "id": row["id"],
         "uuid": row["uuid"],
         "content": row["content"],
+        "gist": gist,
         "category": row["category"],
         "project": row["project"],
         "created_at": row["created_at"],
@@ -384,6 +625,7 @@ def add_memory(
     project: str | None = None,
     tags: Any = None,
     related_ids: Any = None,
+    deduplicate: bool = True,
 ) -> dict[str, Any]:
     if not content or not str(content).strip():
         raise ValueError("content no puede estar vacío")
@@ -394,14 +636,45 @@ def add_memory(
     proj = str(project).strip() if project else None
     normalized_tags = normalize_tags(tags)
     normalized_related = normalize_related_ids(related_ids)
+
+    # Deduplicación: si hay un recuerdo muy similar, actualizarlo en lugar de duplicar.
+    if deduplicate:
+        similar = find_similar_memories(cleaned, project=proj, threshold=0.75, limit=3)
+        if similar:
+            best = similar[0]
+            # Fusionar tags y relaciones.
+            existing_tags = set(get_memory_tags(best["id"]))
+            existing_tags.update(normalized_tags)
+            existing_rels = set(get_memory_relations(best["id"]))
+            existing_rels.update(normalized_related)
+            return update_memory(
+                best["id"],
+                content=cleaned,
+                category=cat or best.get("category"),
+                project=proj,
+                tags=sorted(existing_tags),
+                related_ids=sorted(existing_rels),
+            )
+
+    gist = generate_gist(cleaned)
     new_uuid = generate_uuid()
     now = int(time.time())
     cur = get_db().execute(
-        "INSERT INTO memories (content, category, project, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?, ?)",
-        (cleaned, cat, proj, now, now, new_uuid),
+        "INSERT INTO memories (content, gist, category, project, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (cleaned, gist, cat, proj, now, now, new_uuid),
     )
     memory_id = cur.lastrowid
     set_memory_tags(memory_id, normalized_tags)
+
+    # Si hay similares moderados, relacionarlos automáticamente.
+    if deduplicate:
+        moderate_similar = find_similar_memories(cleaned, project=proj, threshold=0.55, limit=5)
+        related_set = set(normalized_related)
+        for sim in moderate_similar:
+            if sim["id"] != memory_id:
+                related_set.add(sim["id"])
+        normalized_related = sorted(related_set)
+
     set_memory_relations(memory_id, normalized_related)
     get_db().commit()
     _maybe_sync()
@@ -420,7 +693,9 @@ def search_memories(
     normalized_tags = normalize_tags(tags)
     if not query or not str(query).strip():
         return recent_memories(limit=limit, tags=normalized_tags)
-    q = str(query).strip()
+    q = sanitize_fts_query(str(query).strip())
+    if not q:
+        return recent_memories(limit=limit, tags=normalized_tags)
     limit = max(1, min(int(limit), 100))
 
     # Filtros de fecha
@@ -431,7 +706,7 @@ def search_memories(
     start_ts = after_ts if after_ts is not None else since_ts
 
     sql = """
-        SELECT m.id, m.uuid, m.content, m.category, m.project, m.created_at,
+        SELECT m.id, m.uuid, m.content, m.gist, m.category, m.project, m.created_at,
                m.updated_at, rank AS score
         FROM memories_fts f
         JOIN memories m ON m.id = f.rowid
@@ -529,9 +804,10 @@ def update_memory(
     new_project = str(project).strip() if project is not None else row["project"]
     now = int(time.time())
 
+    new_gist = generate_gist(cleaned)
     get_db().execute(
-        "UPDATE memories SET content = ?, category = ?, project = ?, updated_at = ? WHERE id = ?",
-        (cleaned, new_category, new_project, now, memory_id),
+        "UPDATE memories SET content = ?, gist = ?, category = ?, project = ?, updated_at = ? WHERE id = ?",
+        (cleaned, new_gist, new_category, new_project, now, memory_id),
     )
 
     normalized_tags = normalize_tags(tags)
@@ -1165,6 +1441,26 @@ TOOLS = [
             "required": ["data"],
         },
     },
+    {
+        "name": "memory_index_project",
+        "description": (
+            "Indexa los archivos de un proyecto y guarda descripciones cortas en memoria. "
+            "Úsalo al inicio de una sesión para tener un mapa liviano del repositorio."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Ruta al directorio del proyecto (default: directorio actual).",
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Nombre del proyecto (default: nombre del directorio).",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -1290,6 +1586,9 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
         )
     if name == "memory_sync":
         return sync_git(full=True)
+    if name == "memory_index_project":
+        path = args.get("path") or "."
+        return index_project(path=path, project=args.get("project"))
     raise ValueError(f"Herramienta desconocida: {name}")
 
 

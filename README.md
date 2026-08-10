@@ -243,6 +243,16 @@ pytest tests/benchmarks -v
 
 Los benchmarks usan escenarios sintéticos de proyectos reales (autenticación, base de datos, deploy, frontend). No requieren llamadas a APIs externas.
 
+## 🧠 Optimizaciones de tokens
+
+Kimi Memory incluye varias optimizaciones para reducir el consumo de tokens:
+
+- **Gist automático**: cada recuerdo largo genera un resumen corto. `memory_search` devuelve el gist primero, así el modelo puede decidir si necesita leer el contenido completo.
+- **Sanitización FTS5**: las consultas se limpian automáticamente para evitar errores de sintaxis con `.`, `-`, comillas, etc.
+- **Deduplicación**: si guardás un recuerdo muy similar a uno existente, se actualiza el anterior en lugar de crear un duplicado.
+- **Indexación de proyectos**: `memory_index_project` escanea un repo y guarda descripciones cortas de cada archivo, para que no haga falta leer todo el árbol en cada sesión.
+- **Diff en hooks**: el hook `PostToolUse` guarda solo el diff del archivo modificado, no el archivo completo.
+
 ## 🗺️ Roadmap
 
 Ver [`TODO.md`](./TODO.md) para la lista completa de mejoras planificadas.

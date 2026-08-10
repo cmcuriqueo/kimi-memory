@@ -182,3 +182,110 @@ def test_normalize_tags(mcp_module):
 def test_normalize_related_ids(mcp_module):
     assert mcp_module.normalize_related_ids([1, 2, "3", 2], memory_id=2) == [1, 3]
     assert mcp_module.normalize_related_ids(None) == []
+
+
+def test_search_sanitizes_fts5_special_chars(mcp_module):
+    """Las consultas con caracteres especiales de FTS5 no deben fallar."""
+    mcp_module.add_memory("Usamos Fly.io para desplegar.", category="decision", project="api")
+    mcp_module.add_memory("El token es UTF-8 con guiones.", category="note", project="api")
+
+    # Puntos
+    results = mcp_module.search_memories("Fly.io", project="api")
+    assert any("Fly.io" in r["content"] for r in results)
+
+    # Guiones
+    results = mcp_module.search_memories("UTF-8", project="api")
+    assert any("UTF-8" in r["content"] for r in results)
+
+    # Comillas
+    results = mcp_module.search_memories('"token"', project="api")
+    assert len(results) >= 0  # No lanza excepcion
+
+
+def test_generate_gist(mcp_module):
+    """El gist resume contenido largo y conserva contenido corto."""
+    corto = "Decisión: usamos JWT."
+    assert mcp_module.generate_gist(corto) == corto
+
+    largo = (
+        "Decisión de arquitectura: usamos JWT con algoritmo RS256 para autenticación. "
+        "El secret se genera con openssl y se rota cada 90 dias. "
+        "El frontend recibe un access token de 15 minutos y un refresh token de 7 dias. "
+        "Además configuramos CORS para permitir solo los dominios de producción y "
+        "agregamos rate limiting en el endpoint de login para prevenir ataques de fuerza bruta."
+    )
+    gist = mcp_module.generate_gist(largo)
+    assert len(gist) < len(largo)
+    assert "JWT" in gist or "RS256" in gist
+    assert gist.endswith("...")
+
+
+def test_memory_includes_gist(mcp_module):
+    """Los recuerdos devueltos incluyen el campo gist."""
+    result = mcp_module.add_memory(
+        "Esta es una decision larga con mucho contexto. " * 10,
+        category="decision",
+    )
+    memory = mcp_module.get_memories([result["id"]])[0]
+    assert "gist" in memory
+    assert memory["gist"]
+    assert len(memory["gist"]) < len(memory["content"])
+
+
+def test_add_memory_deduplicates_similar(mcp_module):
+    """Si se guarda un recuerdo muy similar, se actualiza el existente."""
+    a = mcp_module.add_memory(
+        "Usamos JWT con RS256 para autenticación.",
+        category="decision",
+        project="api",
+        tags=["auth"],
+    )
+    b = mcp_module.add_memory(
+        "Usamos JWT con RS256 para autenticación en la API.",
+        category="decision",
+        project="api",
+        tags=["auth", "jwt"],
+    )
+    assert a["id"] == b["id"]
+    assert b["updated"] is True
+
+    tags = mcp_module.get_memory_tags(b["id"])
+    assert "auth" in tags
+    assert "jwt" in tags
+
+
+def test_add_memory_no_deduplicate_when_disabled(mcp_module):
+    """Se puede desactivar la deduplicación."""
+    a = mcp_module.add_memory("Decisión única.", category="decision")
+    b = mcp_module.add_memory("Decisión única.", category="decision", deduplicate=False)
+    assert a["id"] != b["id"]
+
+
+def test_find_similar_memories(mcp_module):
+    """find_similar_memories encuentra recuerdos relacionados."""
+    a = mcp_module.add_memory("Usamos PostgreSQL con SQLAlchemy.", project="api")
+    mcp_module.add_memory("Otra cosa no relacionada.", project="api")
+
+    similar = mcp_module.find_similar_memories(
+        "La base de datos es PostgreSQL y usamos SQLAlchemy.",
+        project="api",
+        threshold=0.3,
+    )
+    assert any(s["id"] == a["id"] for s in similar)
+
+
+def test_index_project(mcp_module, tmp_path):
+    """index_project guarda descripciones de archivos del proyecto."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "auth.py").write_text(
+        '"""Modulo de autenticación con JWT."""\ndef login(): pass\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text("# Proyecto demo\n", encoding="utf-8")
+
+    result = mcp_module.index_project(tmp_path, project="demo")
+    assert result["indexed"] == 2
+    assert result["project"] == "demo"
+
+    results = mcp_module.search_memories("autenticación", project="demo")
+    assert any("auth.py" in r["content"] for r in results)

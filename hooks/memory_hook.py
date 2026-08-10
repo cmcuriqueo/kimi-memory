@@ -31,6 +31,7 @@ El script es intencionalmente fail-open: cualquier error se loguea a stderr y
 sale con código 0, para no interrumpir el flujo de Kimi.
 """
 
+import difflib
 import json
 import os
 import re
@@ -228,6 +229,52 @@ def handle_session_end(payload: dict[str, Any]) -> None:
         print(f"[kimi-memory-hook] Sync Git falló: {e}", file=sys.stderr)
 
 
+def _truncate_diff(diff: str, max_lines: int = 20) -> str:
+    lines = diff.splitlines()
+    if len(lines) <= max_lines:
+        return diff
+    return "\n".join(lines[:max_lines]) + f"\n... ({len(lines) - max_lines} lineas mas)"
+
+
+def _compute_file_diff(cwd: str, file_path: str, tool_name: str, tool_input: dict[str, Any]) -> str:
+    path_obj = Path(file_path)
+    if path_obj.is_absolute():
+        full_path = path_obj
+    else:
+        full_path = Path(cwd) / path_obj
+
+    old_content = ""
+    try:
+        if full_path.exists():
+            old_content = full_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        pass
+
+    new_content = old_content
+    if tool_name == "WriteFile":
+        new_content = tool_input.get("content") or old_content
+    elif tool_name == "StrReplaceFile":
+        old_str = tool_input.get("old") or tool_input.get("old_string", "")
+        new_str = tool_input.get("new") or tool_input.get("new_string", "")
+        new_content = old_content.replace(old_str, new_str, 1) if old_str else old_content
+
+    if old_content == new_content:
+        return f"Archivo modificado durante la sesion: {file_path} (sin cambios detectados)"
+
+    diff = "".join(
+        difflib.unified_diff(
+            old_content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+        )
+    )
+    if not diff.strip():
+        return f"Archivo modificado durante la sesion: {file_path}"
+
+    return f"Cambio en {file_path}:\n" + _truncate_diff(diff)
+
+
 def handle_post_tool_use(payload: dict[str, Any]) -> None:
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input", {}) or {}
@@ -250,7 +297,7 @@ def handle_post_tool_use(payload: dict[str, Any]) -> None:
     if path_obj.name:
         tags.append(path_obj.name.lower())
 
-    content = f"Archivo modificado durante la sesión: {file_path}"
+    content = _compute_file_diff(cwd, file_path, tool_name, tool_input)
     result = _save_memory(
         content=content,
         category="file_change",
