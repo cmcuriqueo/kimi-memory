@@ -14,10 +14,21 @@ const os = require("os");
 const { execSync, spawn } = require("child_process");
 
 const HOME = os.homedir();
-const PLUGIN_DIR = path.join(HOME, ".kimi-code", "plugins", "kimi-memory");
-const SKILL_DIR = path.join(HOME, ".kimi", "skills", "kimi-memory");
-const MCP_CONFIG = path.join(HOME, ".kimi", "mcp.json");
-const KIMI_CONFIG = path.join(HOME, ".kimi", "config.toml");
+
+// El CLI actual usa ~/.kimi-code; versiones viejas usan ~/.kimi.
+// Se prefiere ~/.kimi-code si existe; si no, ~/.kimi.
+function detectConfigHome() {
+  const kimiCode = path.join(HOME, ".kimi-code");
+  if (fs.existsSync(kimiCode)) return kimiCode;
+  return path.join(HOME, ".kimi");
+}
+
+const CONFIG_HOME = detectConfigHome();
+const PLUGIN_DIR = path.join(CONFIG_HOME, "plugins", "kimi-memory");
+const SKILL_DIR = path.join(CONFIG_HOME, "skills", "kimi-memory");
+const MCP_CONFIG = path.join(CONFIG_HOME, "mcp.json");
+const KIMI_CONFIG = path.join(CONFIG_HOME, "config.toml");
+const MEMORY_DB = path.join(CONFIG_HOME, "memory.db");
 const PKG_DIR = __dirname;
 
 const IS_WIN = process.platform === "win32";
@@ -121,7 +132,7 @@ function updateMcpConfig(pythonAbs) {
     command: pythonAbs,
     args: ["-u", path.join(PLUGIN_DIR, "memory_mcp.py")],
     env: {
-      KIMI_MEMORY_DB: path.join(HOME, ".kimi-code", "memory.db"),
+      KIMI_MEMORY_DB: MEMORY_DB,
     },
   };
   fs.writeFileSync(MCP_CONFIG, JSON.stringify(cfg, null, 2), "utf-8");
@@ -145,39 +156,39 @@ function removeMcpConfig() {
 
 const HOOK_EVENTS = [
   { event: "SessionEnd" },
-  { event: "PostToolUse", matcher: "WriteFile|StrReplaceFile" },
+  // Incluye nombres de tools del CLI actual (Write|Edit) y del viejo (WriteFile|StrReplaceFile).
+  { event: "PostToolUse", matcher: "Write|Edit|WriteFile|StrReplaceFile" },
   { event: "UserPromptSubmit" },
   { event: "PreCompact" },
   { event: "StopFailure" },
 ];
 
-function hookCommand() {
+function hookCommand(pythonAbs) {
   const hookPath = path.join(PLUGIN_DIR, "hooks", "memory_hook.py");
   return IS_WIN
-    ? `python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\memory_hook.py`
-    : `python ${hookPath}`;
+    ? `"${pythonAbs}" "${hookPath}"`
+    : `${pythonAbs} ${hookPath}`;
 }
 
 function legacyHookCommands() {
-  // Comandos anteriores que deben removerse al actualizar.
-  const legacyPath = path.join(PLUGIN_DIR, "hooks", "session_end.py");
-  return IS_WIN
-    ? [
-        `python %USERPROFILE%\\.kimi-code\\plugins\\kimi-memory\\hooks\\session_end.py`,
-        `python ${legacyPath}`,
-      ]
-    : [`python ${legacyPath}`];
+  // Subcadenas que identifican cualquier variante vieja del hook
+  // (distintos intérpretes, comillas o rutas) para removerla al actualizar.
+  return ["memory_hook.py", "session_end.py"];
 }
 
-function hookBlock(event, matcher) {
-  const cmd = hookCommand();
+function hookBlock(event, matcher, pythonAbs) {
+  const cmd = hookCommand(pythonAbs);
   let block = `[[hooks]]\nevent = "${event}"\n`;
   if (matcher) {
     block += `matcher = "${matcher}"\n`;
   }
-  block += IS_WIN
-    ? `command = '${cmd}'\n`
-    : `command = "${cmd}"\n`;
+  // TOML literal string (comillas simples): backslashes y comillas dobles
+  // del comando quedan literales (importante para rutas de Windows).
+  if (cmd.includes("'")) {
+    block += `command = "${cmd.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"\n`;
+  } else {
+    block += `command = '${cmd}'\n`;
+  }
   return block;
 }
 
@@ -210,15 +221,15 @@ function removeHookBlocks(content, commands) {
   return out.join("\n");
 }
 
-function installHook() {
+function installHook(pythonAbs) {
   if (!fs.existsSync(KIMI_CONFIG)) {
     warn(`No existe ${KIMI_CONFIG}. Creando uno mínimo.`);
     fs.writeFileSync(KIMI_CONFIG, "", "utf-8");
   }
   let content = fs.readFileSync(KIMI_CONFIG, "utf-8");
-  const cmd = hookCommand();
+  const cmd = hookCommand(pythonAbs);
 
-  // Remover configuraciones viejas (session_end.py) y evitar duplicados.
+  // Remover configuraciones viejas (session_end.py, `python <path>`) y evitar duplicados.
   content = removeHookBlocks(content, [...legacyHookCommands(), cmd]);
 
   if (content.includes(cmd)) {
@@ -226,31 +237,42 @@ function installHook() {
     return;
   }
 
-  const blocks = HOOK_EVENTS.map((h) => hookBlock(h.event, h.matcher)).join("\n");
+  const blocks = HOOK_EVENTS.map((h) => hookBlock(h.event, h.matcher, pythonAbs)).join("\n");
 
   // Kimi por defecto pone `hooks = []`, que es incompatible con [[hooks]].
   // Reemplazamos ese array vacío por los bloques de hooks.
   if (/^\s*hooks\s*=\s*\[\]\s*$/m.test(content)) {
     content = content.replace(/^\s*hooks\s*=\s*\[\]\s*$/m, blocks.trim());
   } else {
-    content = content.trimEnd() + "\n\n" + blocks;
+    // Los [[hooks]] son claves top-level: deben ir ANTES de la primera
+    // tabla [sección]; si se agregan al final quedarían dentro de la última
+    // tabla y TOML fallaría o los ignoraría.
+    const firstTable = content.search(/^\s*\[/m);
+    if (firstTable === -1) {
+      content = content.trimEnd() + "\n\n" + blocks + "\n";
+    } else {
+      content =
+        content.slice(0, firstTable).trimEnd() +
+        "\n\n" + blocks + "\n\n" +
+        content.slice(firstTable);
+    }
   }
 
   fs.writeFileSync(KIMI_CONFIG, content, "utf-8");
-  ok("Hooks de kimi-memory agregados a config.toml");
+  ok(`Hooks de kimi-memory agregados a ${KIMI_CONFIG}`);
 }
 
 function removeHook() {
   if (!fs.existsSync(KIMI_CONFIG)) return;
   let content = fs.readFileSync(KIMI_CONFIG, "utf-8");
-  const cmd = hookCommand();
-  content = removeHookBlocks(content, [...legacyHookCommands(), cmd]);
+  content = removeHookBlocks(content, legacyHookCommands());
   fs.writeFileSync(KIMI_CONFIG, content, "utf-8");
   ok("Hooks de kimi-memory removidos de config.toml");
 }
 
 function install(includeHook) {
   log("== Instalando kimi-memory ==");
+  log(`Config home: ${CONFIG_HOME}`);
   const py = findPython();
   if (!py) {
     error("No se encontró Python 3.10+. Instalalo e intentá de nuevo.");
@@ -278,7 +300,7 @@ function install(includeHook) {
 
   if (includeHook) {
     log("Configurando hooks de Kimi Memory...");
-    installHook();
+    installHook(py.abs);
   }
 
   log("");
