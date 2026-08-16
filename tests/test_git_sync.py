@@ -112,3 +112,61 @@ def test_get_git_repo_from_env(tmp_path, monkeypatch):
 
     import memory_mcp
     assert memory_mcp.get_git_repo() == repo
+
+
+def test_get_git_repo_from_config(tmp_path, monkeypatch, mcp_module):
+    """El repo puede configurarse en el archivo de config persistente."""
+    repo = tmp_path / "config-repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+
+    config_path = tmp_path / "memory-config.json"
+    monkeypatch.setenv("KIMI_MEMORY_CONFIG", str(config_path))
+    monkeypatch.delenv("KIMI_MEMORY_GIT_REPO", raising=False)
+
+    result = mcp_module.set_git_repo(repo)
+    assert result["ok"] is True
+    assert mcp_module.get_git_repo() == repo
+
+
+def test_env_takes_precedence_over_config(tmp_path, monkeypatch, mcp_module):
+    """La variable de entorno tiene prioridad sobre el archivo de config."""
+    env_repo = tmp_path / "env-repo"
+    env_repo.mkdir()
+    subprocess.run(["git", "-C", str(env_repo), "init"], check=True, capture_output=True)
+
+    config_repo = tmp_path / "config-repo"
+    config_repo.mkdir()
+    subprocess.run(["git", "-C", str(config_repo), "init"], check=True, capture_output=True)
+
+    config_path = tmp_path / "memory-config.json"
+    monkeypatch.setenv("KIMI_MEMORY_CONFIG", str(config_path))
+    monkeypatch.setenv("KIMI_MEMORY_GIT_REPO", str(env_repo))
+
+    mcp_module.set_git_repo(config_repo)
+    assert mcp_module.get_git_repo() == env_repo
+
+
+def test_memory_config_tool(tmp_path, monkeypatch, mcp_module):
+    """La herramienta memory_config guarda y lee la configuración."""
+    repo = tmp_path / "tool-repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+
+    config_path = tmp_path / "memory-config.json"
+    monkeypatch.setenv("KIMI_MEMORY_CONFIG", str(config_path))
+    monkeypatch.delenv("KIMI_MEMORY_GIT_REPO", raising=False)
+
+    result = mcp_module.dispatch_tool("memory_config", {"git_repo": str(repo)})
+    assert result["ok"] is True
+    assert result["git_repo"] == str(repo)
+    assert mcp_module.get_git_repo() == repo
+
+
+def test_memory_sync_with_explicit_repo(git_repo, mcp_module):
+    """memory_sync acepta un repo explícito como parámetro."""
+    mcp_module.add_memory("Recuerdo con repo explícito")
+    result = mcp_module.dispatch_tool("memory_sync", {"repo": str(git_repo)})
+    assert result["synced"] is True
+    log = _git(git_repo, ["log", "--oneline"])
+    assert "kimi-memory sync" in log.stdout

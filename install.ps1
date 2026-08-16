@@ -61,6 +61,12 @@ if (-not (Test-Path $McpConfig)) {
 
 # Actualizar mcp.json
 $MemoryDb = "$ConfigHome\memory.db"
+$EnvVars = [PSCustomObject]@{ KIMI_MEMORY_DB = $MemoryDb }
+$GitRepo = $env:KIMI_MEMORY_GIT_REPO
+if ($GitRepo) {
+    $EnvVars | Add-Member -NotePropertyName KIMI_MEMORY_GIT_REPO -NotePropertyValue $GitRepo -Force
+}
+
 $Config = Get-Content -Path $McpConfig -Raw | ConvertFrom-Json
 if (-not $Config.mcpServers) {
     $Config | Add-Member -NotePropertyName mcpServers -NotePropertyValue @{} -Force
@@ -68,7 +74,7 @@ if (-not $Config.mcpServers) {
 $Config.mcpServers | Add-Member -NotePropertyName "kimi-memory" -NotePropertyValue ([PSCustomObject]@{
     command = $PythonAbs
     args = @("-u", "$PluginDir\memory_mcp.py")
-    env = [PSCustomObject]@{ KIMI_MEMORY_DB = $MemoryDb }
+    env = $EnvVars
 }) -Force
 
 $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $McpConfig -Encoding UTF8

@@ -30,6 +30,7 @@ except Exception:
 # Configuración
 # ---------------------------------------------------------------------------
 DEFAULT_DB = Path.home() / ".kimi-code" / "memory.db"
+DEFAULT_CONFIG = Path.home() / ".kimi-code" / "memory-config.json"
 
 # Variables globales para la conexión lazy. Permiten reconfigurar la DB en tests.
 _DB_PATH: Path | None = None
@@ -40,6 +41,33 @@ def get_db_path() -> Path:
     if _DB_PATH is not None:
         return _DB_PATH
     return Path(os.environ.get("KIMI_MEMORY_DB", DEFAULT_DB))
+
+
+def get_config_path() -> Path:
+    """Devuelve el path al archivo de configuración persistente del plugin."""
+    return Path(os.environ.get("KIMI_MEMORY_CONFIG", DEFAULT_CONFIG))
+
+
+def load_config() -> dict[str, Any]:
+    """Carga la configuración persistente del plugin."""
+    path = get_config_path()
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception as e:
+        log(f"No se pudo leer config {path}: {e}")
+    return {}
+
+
+def save_config(data: dict[str, Any]) -> None:
+    """Guarda la configuración persistente del plugin."""
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def set_db_path(path: Path | str) -> None:
@@ -830,14 +858,38 @@ def delete_memory(memory_id: int) -> dict[str, Any]:
 # Sincronización via Git
 # ---------------------------------------------------------------------------
 def get_git_repo() -> Path | None:
-    """Devuelve el path al repo Git configurado, o None si no hay."""
+    """Devuelve el path al repo Git configurado, o None si no hay.
+
+    Orden de resolución:
+    1. Variable de entorno KIMI_MEMORY_GIT_REPO.
+    2. Campo 'git_repo' en el archivo de configuración persistente.
+    """
     raw = os.environ.get("KIMI_MEMORY_GIT_REPO", "").strip()
+    if not raw:
+        cfg = load_config()
+        raw = str(cfg.get("git_repo", "")).strip()
     if not raw:
         return None
     path = Path(raw).expanduser()
     if not path.is_dir():
         return None
     return path
+
+
+def set_git_repo(path: str | Path | None) -> dict[str, Any]:
+    """Guarda o borra el repo Git en la configuración persistente."""
+    cfg = load_config()
+    if path:
+        repo = Path(path).expanduser()
+        if not repo.is_dir():
+            return {"ok": False, "reason": f"No es un directorio: {repo}"}
+        cfg["git_repo"] = str(repo)
+        save_config(cfg)
+        return {"ok": True, "git_repo": str(repo)}
+    else:
+        cfg.pop("git_repo", None)
+        save_config(cfg)
+        return {"ok": True, "git_repo": None}
 
 
 def git_run(repo: Path, args: list[str], check: bool = False) -> subprocess.CompletedProcess[str]:
@@ -1411,12 +1463,34 @@ TOOLS = [
         "name": "memory_sync",
         "description": (
             "Sincroniza la memoria con el repositorio Git configurado en "
-            "KIMI_MEMORY_GIT_REPO. Hace pull, importa cambios remotos, exporta "
-            "los recuerdos locales como archivos Markdown, commitea y hace push."
+            "KIMI_MEMORY_GIT_REPO o en la configuración del plugin. Hace pull, "
+            "importa cambios remotos, exporta los recuerdos locales como "
+            "archivos Markdown, commitea y hace push."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "repo": {
+                    "type": "string",
+                    "description": "Ruta al repo Git (opcional). Si no se indica, usa el configurado.",
+                },
+            },
+        },
+    },
+    {
+        "name": "memory_config",
+        "description": (
+            "Lee o actualiza la configuración del plugin. Usalo para configurar "
+            "el repositorio Git de sincronización sin depender de variables de entorno."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "git_repo": {
+                    "type": "string",
+                    "description": "Ruta al repositorio Git para sincronizar. Si es null/omitido, no se modifica. Usa cadena vacía para borrarlo.",
+                },
+            },
         },
     },
     {
@@ -1585,7 +1659,24 @@ def dispatch_tool(name: str, args: dict[str, Any]) -> Any:
             mode=args.get("mode", "merge"),
         )
     if name == "memory_sync":
+        repo_arg = args.get("repo")
+        if repo_arg:
+            return sync_git(repo=Path(repo_arg).expanduser(), full=True)
         return sync_git(full=True)
+    if name == "memory_config":
+        git_repo_arg = args.get("git_repo")
+        if git_repo_arg is not None:
+            result = set_git_repo(git_repo_arg or None)
+            if not result["ok"]:
+                return result
+        cfg = load_config()
+        repo = get_git_repo()
+        return {
+            "ok": True,
+            "config": cfg,
+            "git_repo": str(repo) if repo else None,
+            "config_path": str(get_config_path()),
+        }
     if name == "memory_index_project":
         path = args.get("path") or "."
         return index_project(path=path, project=args.get("project"))

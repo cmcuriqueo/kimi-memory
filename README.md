@@ -107,12 +107,36 @@ kimi-memory/
 
 Podés sincronizar tu memoria entre dispositivos usando un repositorio Git. Cada recuerdo se exporta como un archivo Markdown con frontmatter YAML en el repo.
 
-```bash
-# Crear o clonar un repo Git
-export KIMI_MEMORY_GIT_REPO=/ruta/a/tu/repo-de-memoria
-```
+Hay tres formas de configurar el repo (en orden de prioridad):
 
-Cuando `KIMI_MEMORY_GIT_REPO` está configurado:
+1. **Variable de entorno** (recomendada si la podés pasar al proceso MCP):
+   ```bash
+   export KIMI_MEMORY_GIT_REPO=/ruta/a/tu/repo-de-memoria
+   ```
+
+2. **En el `env` de `mcp.json`** (la más confiable porque Kimi Code CLI se la pasa directamente al servidor MCP):
+   ```json
+   {
+     "mcpServers": {
+       "kimi-memory": {
+         "command": "python",
+         "args": ["-u", ".../memory_mcp.py"],
+         "env": {
+           "KIMI_MEMORY_DB": ".../memory.db",
+           "KIMI_MEMORY_GIT_REPO": "/ruta/a/tu/repo-de-memoria"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Configuración persistente del plugin** (útil si no querés tocar `mcp.json`):
+   ```
+   memory_config(git_repo="/ruta/a/tu/repo-de-memoria")
+   ```
+   Se guarda en `~/.kimi-code/memory-config.json`.
+
+Cuando el repo Git está configurado:
 
 - Al iniciar el servidor MCP se hace `pull → import → export → commit → push`.
 - Cada `memory_add`/`memory_update`/`memory_delete` exporta y commitea automáticamente.

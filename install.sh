@@ -86,13 +86,32 @@ else
 fi
 MCP_SCRIPT="${PLUGIN_DIR}${SEP}memory_mcp.py"
 
+# Detectar KIMI_MEMORY_GIT_REPO si está definida
+GIT_REPO_ARG=""
+if [ -n "${KIMI_MEMORY_GIT_REPO:-}" ]; then
+    if command -v cygpath &>/dev/null; then
+        GIT_REPO_ARG="$(cygpath -w "${KIMI_MEMORY_GIT_REPO}")"
+    else
+        GIT_REPO_ARG="${KIMI_MEMORY_GIT_REPO}"
+    fi
+fi
+
 # Actualizar mcp.json con jq si está disponible; si no, usar Python
 if command -v jq &>/dev/null; then
-    jq --arg cmd "${PYTHON_ABS}" \
-       --arg arg "${MCP_SCRIPT}" \
-       --arg db "${MEMORY_DB}" \
-       '.mcpServers["kimi-memory"] = {command: $cmd, args: ["-u", $arg], env: {KIMI_MEMORY_DB: $db}}' \
-       "${MCP_CONFIG}" > "${MCP_CONFIG}.tmp" && mv "${MCP_CONFIG}.tmp" "${MCP_CONFIG}"
+    if [ -n "${GIT_REPO_ARG}" ]; then
+        jq --arg cmd "${PYTHON_ABS}" \
+           --arg arg "${MCP_SCRIPT}" \
+           --arg db "${MEMORY_DB}" \
+           --arg repo "${GIT_REPO_ARG}" \
+           '.mcpServers["kimi-memory"] = {command: $cmd, args: ["-u", $arg], env: {KIMI_MEMORY_DB: $db, KIMI_MEMORY_GIT_REPO: $repo}}' \
+           "${MCP_CONFIG}" > "${MCP_CONFIG}.tmp" && mv "${MCP_CONFIG}.tmp" "${MCP_CONFIG}"
+    else
+        jq --arg cmd "${PYTHON_ABS}" \
+           --arg arg "${MCP_SCRIPT}" \
+           --arg db "${MEMORY_DB}" \
+           '.mcpServers["kimi-memory"] = {command: $cmd, args: ["-u", $arg], env: {KIMI_MEMORY_DB: $db}}' \
+           "${MCP_CONFIG}" > "${MCP_CONFIG}.tmp" && mv "${MCP_CONFIG}.tmp" "${MCP_CONFIG}"
+    fi
 else
     "${PYTHON}" - <<PY
 import json
@@ -103,10 +122,14 @@ if not path.exists():
     path.write_text("{}", encoding="utf-8")
 cfg = json.loads(path.read_text(encoding="utf-8"))
 cfg.setdefault("mcpServers", {})
+env = {"KIMI_MEMORY_DB": r"${MEMORY_DB}"}
+git_repo = r"${GIT_REPO_ARG}"
+if git_repo:
+    env["KIMI_MEMORY_GIT_REPO"] = git_repo
 cfg["mcpServers"]["kimi-memory"] = {
     "command": r"${PYTHON_ABS}",
     "args": ["-u", r"${MCP_SCRIPT}"],
-    "env": {"KIMI_MEMORY_DB": r"${MEMORY_DB}"}
+    "env": env
 }
 path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 print("MCP config actualizado:", path)

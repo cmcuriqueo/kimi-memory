@@ -4,6 +4,22 @@ Todos los cambios notables se documentan en este archivo.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-16
+
+### Added
+- Configuración persistente del plugin en `~/.kimi-code/memory-config.json`.
+- Nueva herramienta MCP `memory_config(git_repo=...)` para configurar el repositorio Git de sincronización sin depender de variables de entorno.
+- `memory_sync()` ahora acepta un parámetro opcional `repo` para sincronizar un repo explícito.
+- `get_git_repo()` resuelve el repo en orden: `KIMI_MEMORY_GIT_REPO` > config persistente > parámetro.
+
+### Changed
+- Los instaladores (`cli.js`, `install.sh`, `install.ps1`) detectan `KIMI_MEMORY_GIT_REPO` en el entorno durante la instalación y la agregan al `env` de `mcp.json`.
+- `example-mcp-config.json` incluye `KIMI_MEMORY_GIT_REPO` como ejemplo.
+- README y SKILL documentan las tres formas de configurar el repo Git.
+
+### Fixed
+- El servidor MCP no tenía acceso a `KIMI_MEMORY_GIT_REPO` cuando la variable solo estaba definida en el shell del usuario, porque `mcp.json` no la pasaba al proceso. Ahora se guarda explícitamente en `mcp.json` o en la config persistente.
+
 ## [0.2.3] - 2026-08-10
 
 ### Added

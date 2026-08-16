@@ -128,15 +128,22 @@ function updateMcpConfig(pythonAbs) {
     }
   }
   cfg.mcpServers = cfg.mcpServers || {};
+  const env = {
+    KIMI_MEMORY_DB: MEMORY_DB,
+  };
+  if (process.env.KIMI_MEMORY_GIT_REPO) {
+    env.KIMI_MEMORY_GIT_REPO = process.env.KIMI_MEMORY_GIT_REPO;
+  }
   cfg.mcpServers["kimi-memory"] = {
     command: pythonAbs,
     args: ["-u", path.join(PLUGIN_DIR, "memory_mcp.py")],
-    env: {
-      KIMI_MEMORY_DB: MEMORY_DB,
-    },
+    env,
   };
   fs.writeFileSync(MCP_CONFIG, JSON.stringify(cfg, null, 2), "utf-8");
   ok(`Configuración MCP guardada en ${MCP_CONFIG}`);
+  if (env.KIMI_MEMORY_GIT_REPO) {
+    ok(`Repo Git sincronización: ${env.KIMI_MEMORY_GIT_REPO}`);
+  }
 }
 
 function removeMcpConfig() {

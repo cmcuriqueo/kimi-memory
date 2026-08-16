@@ -109,6 +109,17 @@ Esto devuelve solo recuerdos que tengan **ambos** tags.
 
 `related_ids` vincula recuerdos entre sí. Son bidireccionales: si vinculás A con B, al leer B también vas a ver A. Usalas para conectar decisiones, tareas, bugfixes y prompts de una misma línea de trabajo.
 
+## Sincronización via Git
+
+Si el usuario configuró un repo Git, la memoria se sincroniza automáticamente al iniciar y después de cada cambio. Para configurar o consultar el repo sin depender de variables de entorno:
+
+```
+memory_config(git_repo="/ruta/al/repo-de-memoria")
+memory_config()  # ver configuración actual
+```
+
+La configuración se guarda en `~/.kimi-code/memory-config.json`. También podés sincronizar manualmente con `memory_sync()`.
+
 ## Ubicación de los datos
 
 La base de datos SQLite se guarda en `~/.kimi-code/memory.db`. Podés cambiarla con la variable de entorno `KIMI_MEMORY_DB`.

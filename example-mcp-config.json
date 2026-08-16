@@ -7,7 +7,8 @@
                                                         "C:\\Users\\matias\\.kimi-code\\plugins\\kimi-memory\\memory_mcp.py"
                                                     ],
                                            "env":  {
-                                                       "KIMI_MEMORY_DB":  "C:\\Users\\matias\\.kimi-code\\memory.db"
+                                                       "KIMI_MEMORY_DB":  "C:\\Users\\matias\\.kimi-code\\memory.db",
+                                                       "KIMI_MEMORY_GIT_REPO":  "C:\\Users\\matias\\.kimi-code\\memory-repo"
                                                    }
                                        }
                    }
